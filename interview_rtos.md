@@ -1,6 +1,7 @@
-# 嵌入式RTOS面试知识点
+# 嵌入式RTOS面试知识点（详细版）
 
 > 适用于高级嵌入式工程师岗位（智能硬件大厂）
+> 本文档涵盖FreeRTOS/RT-Thread等主流RTOS的深度技术点
 
 ---
 
@@ -20,105 +21,195 @@
 
 ## 1. 常见RTOS介绍
 
-### 1.1 FreeRTOS
+### 1.1 FreeRTOS深度解析
 
-**特点**：
-- 开源免费（MIT许可）
-- 轻量级（内核3-9KB）
-- 高度可配置
-- 丰富的市场应用
+#### 架构概述
 
-**生态**：
-- 官方支持20+处理器架构
-- 活跃社区
-- 商业支持（AWS FreeRTOS）
+FreeRTOS是全球最流行的开源RTOS，由Richard Barry于2003年创建，现在是Amazon AWS的一部分。
 
-**调度策略**：
-- 抢占式优先级调度
-- 时间片轮询（可选）
-- 合作式调度（可选）
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      FreeRTOS架构                           │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                   Application                         │   │
+│  │   Tasks  │  Queue  │  Semaphore  │  Timer  │  etc  │   │
+│  └─────────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                     Kernel                             │   │
+│  │  Scheduler  │  Task API  │  ISR API  │  Memory  │    │   │
+│  └─────────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                   Porting Layer                      │   │
+│  │  Context Switch  │  Tick  │  ISR Entry/Exit        │   │
+│  └─────────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                 Hardware (MCU)                        │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
 
-**任务优先级**：
-- 0-（configMAX_PRIORITIES-1）
-- 数值越大优先级越高
+#### 核心特性
 
-**商业许可**：
-- 商业使用免费
-- 无需开源衍生代码
+**任务管理**：
+- 任务数量：无限（受内存限制）
+- 优先级：0-（configMAX_PRIORITIES-1）
+- 调度方式：抢占式/时间片/合作式
 
-### 1.2 RT-Thread
+**内存占用**：
+- 内核：3-9KB Flash
+- 每个任务：约70-200字节TCB + 堆栈
 
-**特点**：
-- 国产RTOS
-- 组件丰富
-- 完整软件生态
+**配置选项**：
+```c
+// FreeRTOSConfig.h 关键配置
+#define configUSE_PREEMPTION            1       // 抢占式调度
+#define configUSE_TIME_SLICING          1       // 时间片轮询
+#define configUSE_PORT_OPTIMISED_TASK_SELECTION 1  // 优化优先级
+#define configMAX_PRIORITIES            5       // 最大优先级数
+#define configMINIMAL_STACK_SIZE        128     // 最小堆栈
+#define configTOTAL_HEAP_SIZE           3072    // 堆大小(字节)
+#define configUSE_MUTEXES               1       // 互斥量
+#define configUSE_RECURSIVE_MUTEXES     1       // 递归互斥
+#define configUSE_COUNTING_SEMAPHORES  1       // 计数信号量
+#define configUSE_TASK_NOTIFICATIONS   1       // 任务通知
+#define configUSE_TIMERS                1       // 软件定时器
+#define configUSE_IDLE_HOOK            1       // 空闲钩子
+#define configUSE_TICK_HOOK            1       // Tick钩子
+#define configCHECK_FOR_STACK_OVERFLOW 2       // 栈溢出检测
+#define configUSE_MALLOC_FAILED_HOOK   1       // 内存分配失败钩子
+```
 
-**组件**：
-- FinShell（Shell）
-- Finsh/MSH命令
-- 虚拟文件系统
-- 网络协议栈
-- 设备框架
-- Python/Lua脚本支持
+#### 许可证解析
 
-**调度器**：
-- 抢占式调度
-- 时间片轮询
-- 32级优先级
+**GPL v2 + 附加条款**：
+- 可以商用
+- 但如果修改FreeRTOS源码，需开源
+- 使用静态链接无问题
 
-### 1.3 uCOS-II/III
+**Amazon FreeRTOS**：
+- 额外组件需遵守MIT或BSD
 
-**特点**：
-- 高可靠性
-- 经过安全认证
-- 商业授权
+### 1.2 RT-Thread深度解析
 
-**认证**：
-- DO-178C（航空）
-- IEC 61508（工业）
-- ISO 13482（医疗）
+#### 架构特点
 
-**uCOS-II**：
-- 经典版本
-- 任务数：64
-- 优先级：静态
+RT-Thread（简称RTOS或RTT）是中国领先的开源RTOS，由熊谱翔于2006年创建。
 
-**uCOS-III**：
-- 任务数：无限
-- 优先级：可配置
-- 时间片轮询
-- 内核对象：事件标志、互斥信号量
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      RT-Thread架构                         │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                 应用层                                 │   │
+│  │  FinShell  │  组件  │  设备驱动  │  应用程序        │   │
+│  └─────────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                   内核层                               │   │
+│  │  调度器  │  对象管理  │  内存管理  │  IPC           │   │
+│  └─────────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              BSP / 驱动层                             │   │
+│  │  芯片驱动  │  传感器驱动  │  外设驱动                │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### 1.4 Zephyr
+#### 核心组件
 
-**特点**：
-- Linux基金会支持
-- 物联网导向
-- 配置化构建
+**内核组件**：
+- 调度器：32级优先级抢占式
+- 线程：支持POSIX线程
+- 信号量/互斥锁/事件
+- 消息队列/邮箱
+- 内存管理：slab/pool
 
-**特性**：
-- Kconfig配置
-- Device Tree
-- 统一驱动模型
-- 蓝牙/WiFi栈
+**组件组件**：
+- FinSH：Shell命令行
+- DFS：虚拟文件系统
+- LWIP：网络协议栈
+- Device：设备框架
+- UI：图形界面
+- 脚本：Python/Lua支持
 
-**目标**：
-- IoT设备
-- 可穿戴设备
-- 传感器节点
+### 1.3 uCOS-II/III深度解析
 
-### 1.5 LiteOS
+#### 安全认证
 
-**特点**：
-- 华为推出
-- 轻量级
-- 物联网生态
+**DO-178C（航空）**：
+- DAL A-E 等级
+- 最严格：不允许任何可能影响输出的错误
 
-**组件**：
-- LiteOS kernel
-- IoT联接
-- 安全框架
-- OTA升级
+**IEC 61508（工业）**：
+- SIL 1-4 等级
+- 功能安全标准
+
+**ISO 26262（汽车）**：
+- ASIL A-D 等级
+- 汽车电子安全标准
+
+#### uCOS-III vs uCOS-II
+
+| 特性 | uCOS-II | uCOS-III |
+|------|---------|----------|
+| 任务数 | 64 | 无限 |
+| 优先级 | 静态 | 动态可配置 |
+| 时间片 | 不支持 | 支持 |
+| 内核对象 | 信号量/队列 | +事件标志/软定时器 |
+| 性能 | 优秀 | 更好 |
+
+### 1.4 Zephyr深度解析
+
+#### 构建系统
+
+**Kconfig配置**：
+```bash
+# 图形配置界面
+make menuconfig
+
+# 配置项示例
+CONFIG_RTOS_THREAD_STACK_OVERFLOW=y
+CONFIG_TIMESLICING=y
+CONFIG_NUM_COOP_PRIORITIES=8
+CONFIG_NUM_PREEMPT_PRIORITIES=16
+```
+
+**Device Tree**：
+```dts
+&i2c1 {
+    status = "okay";
+    temp-sensor@48 {
+        compatible = "my,temp-sensor";
+        reg = <0x48>;
+    };
+};
+```
+
+### 1.5 LiteOS深度解析
+
+#### 架构组件
+
+```
+┌─────────────────────────────────────────────┐
+│              应用层                          │
+├─────────────────────────────────────────────┤
+│  AEP │  MQTT  │  OTA  │  端云互通          │
+├─────────────────────────────────────────────┤
+│              能力层                          │
+│  LiteOS Kernel │  安全 │  端云协同          │
+├─────────────────────────────────────────────┤
+│              内核层                          │
+│  任务 │  内存  │  IPC  │  时钟             │
+├─────────────────────────────────────────────┤
+│              硬件抽象层                      │
+│ 芯片适配 │  外设驱动 │  传感器             │
+└─────────────────────────────────────────────┘
+```
 
 ---
 
@@ -126,467 +217,945 @@
 
 ### 2.1 调度器实现原理
 
-#### 调度器类型
-- **抢占式调度**：高优先级任务可以抢占低优先级任务
-- **合作式调度**：任务主动让出CPU
-- **混合式**：两者结合
+#### 调度类型
 
-#### 调度时机
-- 系统节拍（Tick）中断
-- 任务阻塞/唤醒
-- 中断返回
+**抢占式调度**：
+```
+时间 →
+┌──────────────────────────────────────────────────────────┐
+│  TaskA (P3) ████████████                                  │
+│           →→→→→→→→→→→→→→→                                │
+├──────────────────────────────────────────────────────────┤
+│  TaskB (P2)       ████████████                            │
+│                 →→→→→→→→→→→→→→→                           │
+├──────────────────────────────────────────────────────────┤
+│  TaskC (P1)             ████████████                      │
+│                           →→→→→→→→→→→→→                 │
+└──────────────────────────────────────────────────────────┘
+高优先级任务可抢占低优先级任务
+```
 
-### 2.2 优先级调度（抢占式）
+**时间片轮询**：
+```
+时间 →
+┌──────────────────────────────────────────────────────────┐
+│  TaskA (P2) ████████  ████████  ████████                │
+├──────────────────────────────────────────────────────────┤
+│  TaskB (P2) ████████  ████████  ████████                │
+│          相同优先级时间片轮换                               │
+└──────────────────────────────────────────────────────────┘
+```
 
-**原理**：
-- 最高优先级任务运行
-- 有就绪任务则立即切换
-- 优先级数值越小越高或越高越低（可配置）
+**合作式调度**：
+```
+时间 →
+┌──────────────────────────────────────────────────────────┐
+│  TaskA ████████████                                      │
+│            ↓ yield                                        │
+│        ██████████████                                    │
+│                 ↓ yield                                  │
+│            ██████████                                     │
+├──────────────────────────────────────────────────────────┤
+│  TaskB     ██████████████                                 │
+│               ↓ wait(sem)                                 │
+│  ████████████                                             │
+└──────────────────────────────────────────────────────────┘
+任务主动让出CPU
+```
 
-**实现**：
-- 优先级位图算法
-- O(1)时间复杂度
-- 查找最高优先级就绪任务
+### 2.2 优先级位图算法
 
-### 2.3 时间片轮询
+#### O(1)调度原理
 
-**原理**：
-- 相同优先级任务轮换执行
-- 每个任务运行一个时间片
-- 防止低优先级任务饿死
+```
+┌────────────────────────────────────────────────────────────┐
+│                  优先级位图算法                            │
+├────────────────────────────────────────────────────────────┤
+│  优先级:   0     1     2     3     4     5     6     7   │
+│  位图:    [1]   [0]   [1]   [0]   [0]   [0]   [0]   [0]  │
+│                                                          │
+│  uxTopReadyPriority = 2  (最高优先级)                   │
+│                                                          │
+│  计算: 寻找最低位1的位置                                 │
+└────────────────────────────────────────────────────────────┘
+```
 
-**配置**：
+**实现代码**：
 ```c
-#define configUSE_TIME_SLICING 1
-#define configCPU_CLOCK_HZ (SystemCoreClock)
-#define configTICK_RATE_HZ (1000)
-#define configTICK_PRIORITY (configMAX_PRIORITIES - 1)
+// 优先级查找 (ARM Cortex-M优化)
+#define portRECORD_READY_PRIORITY(uxPriority) \
+    (uxTopReadyPriority |= (1UL << (uxPriority)))
+
+#define portRESET_READY_PRIORITY(uxPriority) \
+    (uxTopReadyPriority &= ~(1UL << (uxPriority)))
+
+// 获取最高优先级
+#define portGET_HIGHEST_PRIORITY(uxTopPriority, uxReadyPriorities) \
+    uxTopPriority = (31UL - __clz(uxReadyPriorities))
 ```
 
-### 2.4 任务状态机
+### 2.3 任务控制块（TCB）
 
-**基本状态**：
-| 状态 | 说明 |
-|------|------|
-| Running | 正在运行 |
-| Ready | 就绪等待执行 |
-| Blocked | 阻塞（等待事件） |
-| Suspended | 挂起（不参与调度） |
-
-**FreeRTOS状态**：
-- Running
-- Ready
-- Blocked（延时/等待信号量/队列）
-- Suspended
-
-**状态转换**：
-```
-创建 → Ready → Running → 删除
-               ↓
-            Blocked ← (延时/等待)
-               ↓
-            Ready
-```
-
-### 2.5 上下文切换过程
-
-**保存当前任务**：
-1. 保存当前任务栈帧
-2. 保存寄存器（R4-R11）
-3. 保存程序计数器
-4. 更新当前TCB
-
-**恢复新任务**：
-1. 选择新任务TCB
-2. 恢复寄存器
-3. 恢复栈帧
-4. 切换PSP/MSP
-
-**PendSV中断**：
-- 典型的上下文切换机制
-- 最低优先级
-- 确保其他中断处理完成
-
-```c
-// FreeRTOS上下文切换关键代码
-void vPortYield(void) {
-    /* 设置PendSV触发 */
-    portNVIC_INT_CTRL_REG = portNVIC_PENDSVSET_BIT;
-    /* 内存屏障 */
-    __dsb(portSYSTICK_CLK_BIT);
-    __isb(portSYSTICK_CLK_BIT);
-}
-```
-
-### 2.6 优先级反转问题与解决方案
-
-#### 问题描述
-- 高优先级任务等待低优先级任务持有的资源
-- 中优先级任务抢占低优先级任务
-- 导致高优先级任务响应延迟
-
-#### 解决方案
-
-**优先级继承（Priority Inheritance）**：
-- 临时提升低优先级任务
-- 释放后恢复原优先级
-
-**优先级天花板（Priority Ceiling）**：
-- 预定义资源天花板优先级
-- 获取资源时提升到天花板
-
-**Stack Resource Policy（SRP）**：
-- 基于资源的调度
-- 抢占阈值
-
-### 2.7 内核实现原理
-
-#### 任务控制块（TCB）结构设计
+#### FreeRTOS TCB结构
 
 ```c
-// FreeRTOS TCB简化结构
 typedef struct tskTaskControlBlock {
-    volatile StackType_t    *pxTopOfStack;    // 栈顶
-    ListItem_t              xStateListItem;   // 状态链表
-    StackType_t             *pxStack;         // 栈起始地址
+    volatile StackType_t    *pxTopOfStack;    // 栈顶指针
+
+    // 链表节点（用于就绪/阻塞链表）
+    ListItem_t              xStateListItem;
+
+    // 事件链表节点
+    ListItem_t              xEventListItem;
+
+    // 优先级
+    UBaseType_t             uxPriority;
+    UBaseType_t             uxBasePriority;    // 优先级继承用
+
+    // 栈信息
+    StackType_t             *pxStack;
     char                    pcTaskName[configMAX_TASK_NAME_LEN];
-    UBaseType_t             uxPriority;      // 优先级
-    UBaseType_t             uxBasePriority;   // 基础优先级
-    // ... 其他字段
+
+    // 任务通知（v9.0+）
+    #if( configUSE_TASK_NOTIFICATIONS == 1 )
+        volatile uint32_t ulNotifiedValue;
+        volatile uint8_t ucNotifyState;
+    #endif
+
+    // 静态任务用
+    #if( configSUPPORT_STATIC_ALLOCATION == 1 )
+        StaticTask_t *pxTCBBuffer;
+    #endif
+
+    // 标记状态
+    uint8_t                ucStaticallyAllocated;
+
+    // 删除回调
+    #if( configUSE_TASK_DESTRUCTION_CALLBACK == 1 )
+        void (*pvTaskDeleteCallback)( void * );
+    #endif
+
 } tskTaskControlBlock;
 ```
 
-#### 优先级位图算法
+### 2.4 上下文切换过程
 
-**原理**：
-- 使用位图表示优先级状态
-- 1表示有就绪任务
-- 查找最高位1获得最高优先级
-- O(1)时间复杂度
+#### PendSV中断
 
-#### 就绪队列设计
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    上下文切换流程                           │
+├─────────────────────────────────────────────────────────────┤
+│  1. 触发PendSV (设置PendSV挂起位)                          │
+│        │                                                    │
+│        ↓                                                    │
+│  2. 完成当前ISR (可能有更高优先级中断)                       │
+│        │                                                    │
+│        ↓                                                    │
+│  3. 进入PendSV_Handler                                     │
+│        │                                                    │
+│        ├── 保存当前任务上下文                               │
+│        │   • R4-R11, LR, PSP                              │
+│        │                                                    │
+│        ├── 保存当前任务栈指针到TCB                          │
+│        │   pxTopOfStack = psp                              │
+│        │                                                    │
+│        ├── 选择下一个任务                                   │
+│        │   vTaskSwitchContext()                            │
+│        │                                                    │
+│        ├── 恢复新任务栈指针                                 │
+│        │   psp = pxCurrentTCB->pxTopOfStack               │
+│        │                                                    │
+│        └── 恢复新任务上下文                                 │
+│            • R4-R11, PC                                    │
+│            • 返回新任务                                     │
+└─────────────────────────────────────────────────────────────┘
+```
 
-**链表实现**：
-- 每个优先级一个链表
-- 插入/删除O(1)
-- 遍历O(n)
+#### 汇编代码实现
 
-**红黑树实现**：
-- 按等待时间排序
-- 适合时间敏感调度
+```asm
+PendSV_Handler:
+    // 保存当前任务上下文
+    MRS     R0, PSP                 // 获取PSP
+    CBZ     R0, NoSave             // 如果是0，跳过保存
 
-#### Tickless技术
+    // 保存R4-R11
+    SUBS    R0, R0, #32
+    STM     R0!, {R4-R7}
+    MOV     R4, R8
+    MOV     R5, R9
+    MOV     R6, R10
+    MOV     R7, R11
+    STM     R0!, {R4-R7}
 
-**目的**：
-- 减少无任务时的Tick中断
-- 降低功耗
+    // 保存PSP到当前TCB
+    LDR     R1, =pxCurrentTCB
+    LDR     R0, [R1]
+    STR     R0, [R0, #20]          // pxTopOfStack偏移
 
-**实现**：
-- 计算下次唤醒时间
-- 配置硬件定时器唤醒
-- 关闭系统Tick
+NoSave:
+    // 选择新任务
+    BL      vTaskSwitchContext
 
+    // 获取新任务栈指针
+    LDR     R0, =pxCurrentTCB
+    LDR     R0, [R0]
+    LDR     R0, [R0, #20]          // pxTopOfStack偏移
+
+    // 恢复R4-R11
+    LDM     R0!, {R4-R7}
+    MOV     R8, R4
+    MOV     R9, R5
+    MOV     R10, R6
+    MOV     R11, R7
+    LDM     R0!, {R4-R7}
+
+    // 恢复PSP
+    ADDS    R0, R0, #32
+    MSR     PSP, R0
+
+    // 返回
+    BX      LR
+```
+
+### 2.5 优先级反转问题
+
+#### 问题描述
+
+```
+时间 →
+┌──────────────────────────────────────────────────────────┐
+│  TaskH (P3)  ████                                  │  高优先级
+│               ████  wait(sem)                        │
+├──────────────────────────────────────────────────────────┤
+│  TaskM (P2)        ████████████████████████████    │  中优先级
+│                     (抢占低优先级任务)                   │
+├──────────────────────────────────────────────────────────┤
+│  TaskL (P1) ████  ████  ████  ████  ████         │  低优先级
+│              hold sem                                  │
+└──────────────────────────────────────────────────────────┘
+问题: 高优先级任务被低优先级阻塞，中优先级抢占了低优先级
+```
+
+#### 解决方案
+
+**优先级继承**：
+```
+时间 →
+┌──────────────────────────────────────────────────────────┐
+│  TaskH (P3)  ████                                  │
+│               ████  wait(sem)                        │
+├──────────────────────────────────────────────────────────┤
+│  TaskL (P2*) ████  ████  ████  (优先级提升到P2)    │
+│               hold sem                                 │
+├──────────────────────────────────────────────────────────┤
+│  TaskM (P2)        ████████████████████████████    │  无法抢占
+└──────────────────────────────────────────────────────────┘
+```
+
+**FreeRTOS优先级继承实现**：
 ```c
-// FreeRTOS Tickless配置
-#define configUSE_TICKLESS_IDLE 1
-void vApplicationTickHook(void) { }
-void vApplicationIdleHook(void) {
-    // 计算空闲时间，进入低功耗
+// 获取互斥量（自动优先级继承）
+BaseType_t xSemaphoreTake(SemaphoreHandle_t xSemaphore,
+                          TickType_t xTicksToWait) {
+    // ... 获取逻辑 ...
+
+    // 如果是互斥量且持有者优先级更低
+    if(pxMutexHolder != NULL) {
+        // 提升持有者优先级
+        vTaskPrioritySet(pxMutexHolder, pxCurrentTCB->uxPriority);
+    }
+
+    // ...
 }
 ```
 
-#### 调度器锁实现
+### 2.6 Tickless技术
 
-**作用**：
-- 临时禁止调度
-- 保护临界区
+#### 原理
 
-```c
-// FreeRTOS调度器锁
-vTaskSuspendAll();    // 禁止调度
-// 临界区代码
-xTaskResumeAll();     // 恢复调度
+```
+┌────────────────────────────────────────────────────────────┐
+│                    普通模式 vs Tickless                    │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  普通模式:                                                 │
+│  ─────────────────────────────────────────────────────    │
+│  Run  │ Sleep │ Sleep │ Sleep │ Sleep │ Sleep │ Run       │
+│       │Tick   │Tick   │Tick   │Tick   │Tick   │           │
+│       │  1ms  │  1ms  │  1ms  │  1ms  │  1ms  │           │
+│                                                            │
+│  Tickless:                                                │
+│  ─────────────────────────────────────────────────────    │
+│  Run  │          Sleep              │   Sleep  │  Run      │
+│       │←─────── 100ms ────────────→│←─ 50ms ─→│           │
+│       │      (无Tick中断)          │          │           │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
 ```
 
-### 2.8 多核调度
+#### 实现配置
 
-**SMP（对称多核）**：
-- 所有核心平等
-- 共享就绪队列
-- 需要同步保护
+```c
+// FreeRTOSConfig.h
+#define configUSE_TICKLESS_IDLE     2
 
-**非对称多核（AMP）**：
-- 每核独立运行
-- 独立内存空间
-- 核间通信
+// 实现空闲钩子
+void vApplicationIdleHook(void) {
+    // 计算下次唤醒时间
+    TickType_t expectedIdleTime = calculateNextWakeTime();
+
+    if(expectedIdleTime > minIdlePeriod) {
+        // 配置唤醒定时器
+        configureWakeupTimer(expectedIdleTime);
+
+        // 进入低功耗
+        enterLowPowerMode();
+    }
+}
+
+// 唤醒处理
+void onWakeupTimer(void) {
+    // 补偿睡眠期间的时间
+    vTaskStepTick(expectedIdleTime);
+}
+```
+
+### 2.7 多核调度
+
+#### SMP架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  对称多核 (SMP)                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│    ┌─────────┐    ┌─────────┐    ┌─────────┐              │
+│    │  Core 0 │    │  Core 1 │    │  Core 2 │   ...       │
+│    │  Run    │    │  Ready  │    │  Ready  │              │
+│    └────┬────┘    └────┬────┘    └────┬────┘              │
+│         │              │              │                    │
+│         └──────────────┼──────────────┘                    │
+│                        ↓                                   │
+│              ┌─────────────────┐                          │
+│              │   共享就绪队列   │                          │
+│              │  优先级位图     │                          │
+│              └─────────────────┘                          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 核间同步
+
+```c
+// 调度器锁（多核保护）
+void vTaskEnterCritical(void) {
+    taskENTER_CRITICAL_FROM_ISR();
+
+    // 多核需要额外保护
+    #if( configNUM_CORES > 1 )
+        while(portCORE_ID_GET(portGET_CORE_ID()) != 0) {
+            // 等待核心0初始化
+        }
+    #endif
+}
+
+// 设置CPU亲和性
+void vTaskCoreAffinitySet(TaskHandle_t xTask,
+                           UBaseType_t uxCoreAffinityMask) {
+    #if( configUSE_TASK_AFFINITY == 1 )
+        taskENTER_CRITICAL();
+        pxTCB->uxCoreAffinityMask = uxCoreAffinityMask;
+        taskEXIT_CRITICAL();
+    #endif
+}
+```
 
 ---
 
 ## 3. 任务间通信与同步
 
-### 3.1 二值信号量（互斥锁）
+### 3.1 二值信号量
 
-**特点**：
-- 值为0或1
-- 用于互斥访问
-- 不可递归获取
+#### 原理
 
-**使用场景**：
-- 保护共享资源
-- 任务同步
-
-```c
-SemaphoreHandle_t xSemaphore;
-xSemaphore = xSemaphoreCreateBinary();
-xSemaphoreTake(xSemaphore, portMAX_DELAY);
-// 访问共享资源
-xSemaphoreGive(xSemaphore);
+```
+获取:                              释放:
+┌──────────────┐                ┌──────────────┐
+│  Task A      │                │  Task A      │
+│  Take()     │                │  Give()     │
+└──────┬───────┘                └──────┬───────┘
+       │                                 ↓
+       ↓                          ┌──────────────┐
+┌──────────────┐                 │  Semaphore   │
+│  Semaphore   │                 │  count = 1   │
+│  count = 0  │                 └──────┬───────┘
+│  (阻塞)      │                        ↓
+└──────────────┘                 更高优先级任务可能抢占
+       ↓
+  切换到其他任务
 ```
 
-### 3.2 计数信号量
-
-**特点**：
-- 初始值可配置
-- 计数上限
-- 资源计数
-
-**使用场景**：
-- 生产者/消费者
-- 资源池管理
+#### 使用示例
 
 ```c
-xSemaphore = xSemaphoreCreateCounting(10, 0);
+// 创建二值信号量
+SemaphoreHandle_t xBinarySem;
+xBinarySem = xSemaphoreCreateBinary();
+
+// ISR中释放
+void vISR(void) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(xBinarySem, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+// 任务中获取
+void vTask(void *pvParameters) {
+    while(1) {
+        if(xSemaphoreTake(xBinarySem, portMAX_DELAY) == pdTRUE) {
+            // 处理事件
+        }
+    }
+}
 ```
 
-### 3.3 互斥量（优先级继承）
+### 3.2 互斥量
 
-**特点**：
-- 支持递归获取
-- 优先级继承
-- 所有权概念
+#### 优先级继承机制
 
 ```c
+// 互斥量创建
+SemaphoreHandle_t xMutex;
 xMutex = xSemaphoreCreateMutex();
-xSemaphoreTake(xMutex, portMAX_DELAY);
-// 可递归获取
-xSemaphoreTake(xMutex, portMAX_DELAY);
-xSemaphoreGive(xMutex);
-xSemaphoreGive(xMutex);
+
+// 获取互斥量
+void vTask(void *pv) {
+    while(1) {
+        xSemaphoreTake(xMutex, portMAX_DELAY);
+
+        // 临界区
+        accessSharedResource();
+
+        xSemaphoreGive(xMutex);
+    }
+}
+
+// 递归互斥量
+xRecursiveMutex = xSemaphoreCreateRecursiveMutex();
+xSemaphoreTakeRecursive(xRecursiveMutex, portMAX_DELAY);
+xSemaphoreGiveRecursive(xRecursiveMutex);
 ```
 
-### 3.4 消息队列
+### 3.3 消息队列
 
-**特点**：
-- 异步通信
-- FIFO顺序
-- 可配置消息长度
+#### 队列结构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       消息队列                              │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐ │
+│  │                   队列控制块                         │ │
+│  │  pcHead  │ pcTail  │ uxLength  │ uxItemsWaiting     │ │
+│  └─────────────────────────────────────────────────────┘ │
+│                        ↑                                  │
+│  ┌─────────────────────────────────────────────────────┐ │
+│  │                    消息存储区                         │ │
+│  │  [Msg1] [Msg2] [Msg3] ... [MsgN]                    │ │
+│  │   ↑                    ↑                             │ │
+│  │  pcRead            pcWrite                          │ │
+│  └─────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 环形缓冲实现
 
 ```c
+// 消息队列创建
+#define QUEUE_LENGTH    10
+#define ITEM_SIZE       sizeof(MessageType)
+
 QueueHandle_t xQueue;
-xQueue = xQueueCreate(10, sizeof(uint32_t));
-// 发送
-uint32_t msg = 100;
-xQueueSend(xQueue, &msg, portMAX_DELAY);
-// 接收
-uint32_t rxMsg;
-xQueueReceive(xQueue, &rxMsg, portMAX_DELAY);
+xQueue = xQueueCreate(QUEUE_LENGTH, ITEM_SIZE);
+
+// 发送消息
+void sendMessage(MessageType *msg) {
+    if(xQueueSend(xQueue, msg, 0) != pdTRUE) {
+        // 队列满处理
+    }
+}
+
+// ISR中发送
+void vISR(void) {
+    BaseType_t xHigherPriorityTaskWoken;
+    xQueueSendFromISR(xQueue, &msg, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+// 接收消息
+void receiveMessage(void) {
+    MessageType msg;
+    if(xQueueReceive(xQueue, &msg, portMAX_DELAY) == pdTRUE) {
+        // 处理消息
+    }
+}
 ```
 
-### 3.5 事件标志组
-
-**特点**：
-- 多位标志
-- 等待任意/全部
-- 任务同步
+### 3.4 事件标志组
 
 ```c
+// 创建事件组
 EventGroupHandle_t xEventGroup;
 xEventGroup = xEventGroupCreate();
-// 设置事件
-xEventGroupSetBits(xEventGroup, 0x01);
-// 等待事件
-xEventGroupWaitBits(xEventGroup, 0x01, pdTRUE, pdTRUE, portMAX_DELAY);
+
+// 设置事件位
+// bit0 = TaskA完成, bit1 = TaskB完成, bit2 = 错误
+void TaskAComplete(void) {
+    xEventGroupSetBits(xEventGroup, 0x01);
+}
+
+// 等待所有事件
+void TaskC(void *pv) {
+    EventBits_t uxBits;
+    while(1) {
+        // 等待bit0和bit1都置位
+        uxBits = xEventGroupWaitBits(
+            xEventGroup,
+            0x03,           // 等待bit0和bit1
+            pdTRUE,         // 清除已置位
+            pdTRUE,         // AND条件(全部)
+            portMAX_DELAY
+        );
+
+        if(uxBits & 0x03) {
+            // TaskA和TaskB都完成了
+        }
+    }
+}
+
+// 等待任意事件
+void TaskD(void *pv) {
+    EventBits_t uxBits;
+    while(1) {
+        uxBits = xEventGroupWaitBits(
+            xEventGroup,
+            0x04,           // 等待bit2
+            pdTRUE,         // 清除已置位
+            pdFALSE,        // OR条件(任意)
+            portMAX_DELAY
+        );
+
+        if(uxBits & 0x04) {
+            // 发生错误
+        }
+    }
+}
 ```
 
-### 3.6 临界区保护
+### 3.5 任务通知
 
-**关中断**：
+#### 优势
+
+- 更轻量（无需创建内核对象）
+- 速度更快
+- 内存效率更高
+
 ```c
-taskENTER_CRITICAL();
-// 临界区代码
-taskEXIT_CRITICAL();
+// 发送通知
+void vTaskNotifyGive(TaskHandle_t xTaskToNotify) {
+    vTaskNotifyGiveFromISR(xTaskToNotify, NULL);
+}
+
+// 等待通知
+uint32_t ulNotifyTake(BaseType_t xClearCountOnExit,
+                      TickType_t xTicksToWait) {
+    return ulTaskNotifyTake(xClearCountOnExit, xTicksToWait);
+}
+
+// 任务用法
+void vReceiverTask(void *pv) {
+    while(1) {
+        // 等待通知（类似二值信号量）
+        ulNotifyTake(pdTRUE, portMAX_DELAY);
+
+        // 收到通知，处理数据
+        processData();
+    }
+}
 ```
 
-**锁调度器**：
+### 3.6 死锁预防
+
+#### 资源排序法
+
 ```c
-vTaskSuspendAll();
-// 临界区代码
-xTaskResumeAll();
+// 错误示例 - 可能死锁
+void task1(void) {
+    takeMutexA();    // 先获取A
+    takeMutexB();    // 再获取B
+    // ...
+    giveMutexB();
+    giveMutexA();
+}
+
+void task2(void) {
+    takeMutexB();    // 先获取B（与task1相反顺序）
+    takeMutexA();    // 再获取A
+    // ...
+    giveMutexA();
+    giveMutexB();
+}
+
+// 正确示例 - 固定顺序
+void task1(void) {
+    takeMutexA();
+    takeMutexB();
+    // ...
+    giveMutexB();
+    giveMutexA();
+}
+
+void task2(void) {
+    takeMutexA();    // 同样的顺序
+    takeMutexB();
+    // ...
+    giveMutexB();
+    giveMutexA();
+}
+
+// 超时等待
+BaseType_t tryTakeMutex(SemaphoreHandle_t xMutex,
+                        TickType_t timeout) {
+    if(xSemaphoreTake(xMutex, timeout) == pdTRUE) {
+        return pdTRUE;
+    }
+    // 处理获取失败
+    return pdFALSE;
+}
 ```
-
-### 3.7 死锁检测与预防
-
-**死锁条件**：
-- 互斥条件
-- 占有并等待
-- 不可抢占
-- 循环等待
-
-**预防措施**：
-- 固定顺序获取资源
-- 资源一次性分配
-- 定时等待（避免永久阻塞）
-- 死锁检测算法
 
 ---
 
 ## 4. 内存管理
 
-### 4.1 静态内存分配
+### 4.1 堆内存管理
 
-**特点**：
-- 编译时确定大小
-- 无运行时开销
-- 内存效率高
+#### heap_1.c
+
+最简单的分配器，只支持分配，不支持释放。
 
 ```c
+// 内存布局
 static uint8_t ucHeap[ configTOTAL_HEAP_SIZE ];
-static StackType_t xTaskStack[1024];
-static StaticTask_t xTaskTCB;
-```
 
-### 4.2 动态内存池
-
-**特点**：
-- 固定大小块
-- 无碎片
-- 快速分配
-
-```c
 typedef struct A_BLOCK_LINK {
     struct A_BLOCK_LINK *pxNextFreeBlock;
     size_t xBlockSize;
 } BlockLink_t;
 
-// 内存块结构
-// | 链表指针 | 块大小 | 用户数据 |
-```
+// 分配
+void *pvPortMalloc(size_t xWantedSize) {
+    BlockLink_t *pxBlock, *pxPreviousBlock, *pxNewBlock;
 
-### 4.3 堆内存管理
+    // 对齐
+    xWantedSize += xHeapStructSize;
+    if((xWantedSize & portBYTE_ALIGNMENT_MASK) != 0) {
+        xWantedSize += (portBYTE_ALIGNMENT - (xWantedSize & portBYTE_ALIGNMENT_MASK));
+    }
 
-**首次适配**：
-- 找到第一个足够大的空闲块
-- 速度快
-- 内存碎片多
+    // 查找空闲块
+    pxPreviousBlock = &xStart;
+    pxBlock = xStart.pxNextFreeBlock;
 
-**最佳适配**：
-- 找到最小的足够大块
-- 内存利用率高
-- 速度慢
+    while(pxBlock->xBlockSize < xWantedSize) {
+        pxPreviousBlock = pxBlock;
+        pxBlock = pxBlock->pxNextFreeBlock;
+    }
 
-```c
-// FreeRTOS堆配置
-#define configUSE_MALLOC_FAILED_HOOK 1
-void vApplicationMallocFailedHook(void) {
-    // 内存分配失败处理
+    // 分配...
 }
 ```
 
-### 4.4 内存碎片问题
+#### heap_2.c
 
-**产生原因**：
-- 频繁分配/释放
-- 不同大小内存块
-
-**解决方法**：
-- 内存池
-- 静态分配
-- 定期碎片整理
-
-### 4.5 内存泄漏检测
-
-**方法**：
-- 统计分配/释放次数
-- 记录分配位置
-- 运行时检测
+支持释放，使用最佳匹配算法。
 
 ```c
-// 内存泄漏检测配置
-#define configUSE_MALLOC_FAILED_HOOK 1
+// 释放
+void vPortFree(void *pv) {
+    BlockLink_t *pxBlockToFree;
+
+    // 找到对应的块头
+    pxBlockToFree = (BlockLink_t *)((uint8_t *)pv - xHeapStructSize);
+
+    // 插入到空闲链表（按大小排序）
+    // 合并相邻空闲块
+}
+```
+
+#### heap_4.c
+
+支持合并，最佳匹配加空闲块合并。
+
+```c
+// 空闲块合并
+static void prvHeapInsertBlock(BlockLink_t *pxBlockToInsert) {
+    BlockLink_t *pxIterator;
+    uint8_t *puc;
+
+    // 查找插入位置（按地址顺序）
+    for(pxIterator = &xStart;
+        pxIterator->pxNextFreeBlock < pxBlockToInsert;
+        pxIterator = pxIterator->pxNextFreeBlock) {
+        // ...
+    }
+
+    // 检查是否可以与前一块合并
+    puc = (uint8_t *)pxIterator;
+    if((puc + pxIterator->xBlockSize) == (uint8_t *)pxBlockToInsert) {
+        pxIterator->xBlockSize += pxBlockToInsert->xBlockSize;
+        pxBlockToInsert = pxIterator;
+    }
+
+    // 检查是否可以与后一块合并
+    puc = (uint8_t *)pxBlockToInsert;
+    if((puc + pxBlockToInsert->xBlockSize) <
+       (uint8_t *)pxIterator->pxNextFreeBlock) {
+        pxBlockToInsert->pxNextFreeBlock =
+            pxIterator->pxNextFreeBlock;
+    }
+}
+```
+
+### 4.2 内存池
+
+```c
+// 静态内存池
+#define POOL_SIZE 10
+typedef struct MyObject {
+    int data;
+    // ...
+} MyObject_t;
+
+StaticSemaphore_t xPoolMutexBuffer;
+SemaphoreHandle_t xPoolMutex;
+
+MyObject_t xPool[POOL_SIZE];
+StaticQueue_t xPoolQueueBuffer;
+QueueHandle_t xPoolQueue;
+
+// 初始化
+void vPoolInit(void) {
+    // 初始化互斥锁
+    xPoolMutex = xSemaphoreCreateMutexStatic(&xPoolMutexBuffer);
+
+    // 初始化空闲块队列
+    xPoolQueue = xQueueCreateStatic(POOL_SIZE,
+                                     sizeof(MyObject_t*),
+                                     (uint8_t*)NULL,
+                                     &xQueueBuffer);
+
+    // 填充空闲块
+    for(int i = 0; i < POOL_SIZE; i++) {
+        xQueueSend(xPoolQueue, &xPool[i], 0);
+    }
+}
+
+// 获取对象
+MyObject_t* pxPoolAlloc(TickType_t timeout) {
+    MyObject_t *pxObj;
+
+    xSemaphoreTake(xPoolMutex, portMAX_DELAY);
+    if(xQueueReceive(xPoolQueue, &pxObj, timeout) == pdTRUE) {
+        xSemaphoreGive(xPoolMutex);
+        return pxObj;
+    }
+    xSemaphoreGive(xPoolMutex);
+    return NULL;
+}
+
+// 释放对象
+void vPoolFree(MyObject_t *pxObj) {
+    xSemaphoreTake(xPoolMutex, portMAX_DELAY);
+    xQueueSend(xPoolQueue, &pxObj, 0);
+    xSemaphoreGive(xPoolMutex);
+}
+```
+
+### 4.3 内存碎片
+
+#### 产生原因
+
+```
+分配:            释放后:
+┌───┬───┬───┐    ┌───┬───┬───┐
+│ A │ B │ C │    │ A │   │ C │
+└───┴───┼───┘    └───┴───┼───┘
+        ↓                ↓
+    ┌───┬───┐        ┌───┬───┐
+    │ A │ C │        │ A │ C │
+    └───┴───┘        └───┴───┘
+    剩余空间:0     剩余空间:sizeof(B) * 1
+
+但如果A>C申请，会失败（外部碎片化）
+```
+
+#### 解决方案
+
+```c
+// 方法1: 使用内存池（避免碎片）
+xPool = xPoolCreateStatic();
+
+// 方法2: 预分配常用对象
+typedef struct {
+    uint8_t buffer[256];
+} Buffer_t;
+static Buffer_t buffers[10];
+static StaticQueue_t queue;
+
+// 方法3: 静态分配
+static uint8_t ucHeap[ 1024 * 10 ];
+StaticTask_t xTaskBuffer;
+static StackType_t xStack[ 1024 ];
+```
+
+### 4.4 栈溢出检测
+
+```c
+// 配置
 #define configCHECK_FOR_STACK_OVERFLOW 2
 
-void vApplicationMallocFailedHook(void);
-void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName);
+// 方法1: 填充检查
+void vApplicationStackOverflowHook(TaskHandle_t xTask,
+                                   char *pcTaskName) {
+    // 检测到栈溢出
+    printf("Stack overflow in %s\n", pcTaskName);
+    while(1);
+}
+
+// 方法2: 运行时检查水印
+void checkStack(TaskHandle_t handle) {
+    UBaseType_t watermark = uxTaskGetStackHighWaterMark(handle);
+    if(watermark < 64) {
+        printf("Warning: low stack! %u\n", watermark);
+    }
+}
+
+// 初始化任务时设置栈
+StaticTask_t xTaskTCBBuffer;
+StackType_t xStack[1024];
+
+xTaskCreateStatic(..., &xTaskTCBBuffer, xStack);
 ```
 
 ---
 
 ## 5. 中断与任务交互
 
-### 5.1 中断延迟处理
-
-**中断延迟定义**：
-- 中断发生到处理开始的时间
-- 硬件决定
-- 实时性关键指标
-
-**最小化延迟**：
-- 简短中断处理
-- 快速清除中断标志
-
-### 5.2 Deferred Procedure Call (DPC)
-
-**原理**：
-- 中断处理分为两部分
-- 紧急部分立即执行
-- 耗时部分延迟到任务
-
-**FreeRTOS实现**：
-- 二值信号量
-- 队列
-- 软件定时器
+### 5.1 延迟中断处理
 
 ```c
-void UART_IRQHandler(void) {
-    if(USART_GetITStatus(USARTx, USART_IT_RXNE)) {
-        // 快速处理：接收数据
-        uint8_t data = USART_ReceiveData(USARTx);
-        xQueueSendFromISR(xUartQueue, &data, NULL);
-    }
+// 方法1: 信号量+任务
+SemaphoreHandle_t xSemaphore;
+
+void vISR(void) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    // 读取数据到全局缓冲区
+    readDataToBuffer();
+
+    // 释放信号量通知任务处理
+    xSemaphoreGiveFromISR(xSemaphore, &xHigherPriorityTaskWoken);
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-// 任务中处理
-void vUartTask(void *pvParameters) {
-    uint8_t data;
+void vTask(void *pv) {
     while(1) {
-        if(xQueueReceive(xUartQueue, &data, portMAX_DELAY)) {
-            // 耗时处理
+        if(xSemaphoreTake(xSemaphore, portMAX_DELAY) == pdTRUE) {
+            // 处理数据
+            processBuffer();
         }
     }
 }
+
+// 方法2: 队列
+QueueHandle_t xQueue;
+
+void vISR(void) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    uint8_t data;
+
+    data = readData();
+    xQueueSendFromISR(xQueue, &data, &xHigherPriorityTaskWoken);
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
 ```
 
-### 5.3 中断与信号量/队列
+### 5.2 中断与FreeRTOS API
 
-**FromISR API**：
+#### FromISR函数
+
 ```c
-BaseType_t xQueueSendFromISR(QueueHandle_t xQueue,
-                              const void *pvItemToQueue,
-                              BaseType_t *pxHigherPriorityTaskWoken);
+// 可在ISR中调用的函数
+xSemaphoreGiveFromISR()
+xSemaphoreTakeFromISR()
+xQueueSendFromISR()
+xQueueReceiveFromISR()
+xEventGroupSetBitsFromISR()
+xEventGroupClearBitsFromISR()
+vTaskNotifyGiveFromISR()
+ulTaskNotifyTakeFromISR()
 
-BaseType_t xSemaphoreGiveFromISR(SemaphoreHandle_t xSemaphore,
-                                  BaseType_t *pxHigherPriorityTaskWoken);
+// 不可在普通ISR中调用（需配置configUSE_TIMERS）
+xTimerStartFromISR()
+xTimerStopFromISR()
 ```
 
-### 5.4 中断嵌套
+#### portYIELD_FROM_ISR
 
-**中断优先级**：
-- 可配置优先级
-- 高优先级可抢占低优先级
+```c
+// 正确用法
+void vISR(void) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-**注意事项**：
-- 栈空间考虑
-- 优先级配置合理
+    xSemaphoreGiveFromISR(xSem, &xHigherPriorityTaskWoken);
+
+    // 必须调用
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+// 等价于
+if(xHigherPriorityTaskWoken == pdTRUE) {
+    portYIELD();
+}
+```
+
+### 5.3 中断嵌套
+
+```c
+// 配置支持中断嵌套
+#define configMAX_API_CALL_INTERRUPT_PRIORITY 5
+
+// 高优先级中断（可调用FromISR API）
+void vHighPriorityISR(void) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    // 可以调用FreeRTOS API
+    xSemaphoreGiveFromISR(xSem, &xHigherPriorityTaskWoken);
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+// 更高优先级中断（不可调用FreeRTOS API）
+void vHighestPriorityISR(void) {
+    // 只能做简单处理
+    setFlag();
+}
+```
 
 ---
 
@@ -594,318 +1163,420 @@ BaseType_t xSemaphoreGiveFromISR(SemaphoreHandle_t xSemaphore,
 
 ### 6.1 中断延迟分析
 
-#### 中断响应时间构成
-1. 硬件检测延迟
-2. 中断使能延迟
-3. 现场保护时间
-4. 中断处理时间
+#### 延迟组成
 
-#### 最大中断嵌套深度
-- 栈空间计算
-- 优先级配置
-
-#### 中断卸载技术
-- DMA卸载
-- 快速清除中断
-- 减少处理内容
-
-### 6.2 调度延迟分析
-
-#### 任务切换时间测量
-- 示波器测量
-- Trace分析
-
-#### 调度器开销
-- 调度算法复杂度
-- 优先级查找时间
-- 上下文切换时间
-
-#### 抢占延迟
-- 中断屏蔽时间
-- 临界区时间
-
-### 6.3 最坏情况响应时间分析
-
-#### 响应时间上界计算
 ```
-R = I + C + B
-I: 中断处理时间
-C: 执行时间
-B: 被高优先级任务阻塞时间
+中断延迟 = 硬件检测 + 中断使能延迟 + 响应时间 + 处理时间
+            ↓           ↓            ↓         ↓
+        < 100ns    < 50ns      < 12周期   取决于代码
 ```
 
-#### 优先级反转时间
-- 影响因素
-- 缓解方法
+#### 最小化延迟
 
-#### Holms约束
-- 任务可抢占条件
-- 优先级反转上界
+```c
+// 简短ISR
+void vFastISR(void) {
+    // 标志位置位，立即退出
+    g_flag = 1;
 
-### 6.4 优先级继承/天花板协议
+    // 不做复杂处理
+}
 
-#### 优先级继承（Priority Inheritance）
-- 临时提升低优先级任务
-- 解决优先级反转
-- 实现复杂度中等
+// 延迟处理在任务中
+void vTask(void *pv) {
+    while(1) {
+        if(g_flag) {
+            g_flag = 0;
+            // 复杂处理
+        }
+    }
+}
+```
 
-#### 优先级天花板（Priority Ceiling）
-- 预定义资源天花板
-- 获取时提升到天花板
-- 实现简单但保守
+### 6.2 调度延迟
 
-#### Stack Resource Policy（SRP）
-- 基于资源的调度
-- 抢占阈值
-- 适合多资源场景
+#### 影响因素
+
+- 当前任务执行时间
+- 调度器锁持有时间
+- 中断处理时间
+- 临界区长度
+
+#### 测量方法
+
+```c
+volatile uint32_t ul schedStart, ul schedEnd;
+
+void vTask1(void *pv) {
+    while(1) {
+        // 任务体
+    }
+}
+
+// 在断点处测量调度延迟
+// 从任务A切换到任务B的时间
+```
+
+### 6.3 优先级反转时间计算
+
+#### 响应时间分析
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              任务响应时间分析                              │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  R(Ti) = Ci + Σ(R(Tj) * (Ci / Tj))                       │
+│                                                             │
+│  其中:                                                     │
+│  R(Ti) = 任务Ti的响应时间                                  │
+│  Ci    = 任务Ti的最坏执行时间                              │
+│  Tj    = 周期或最小间隔                                    │
+│  Σ     = 所有高优先级任务的总和                             │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 6.4 优先级继承协议
+
+#### 实现细节
+
+```c
+// FreeRTOS互斥量优先级继承
+void vTaskPrioritySet(TaskHandle_t xTask,
+                      UBaseType_t uxNewPriority) {
+    // 如果新优先级高于当前优先级
+    if(uxNewPriority > pxCurrentTCB->uxPriority) {
+        // 提升优先级
+        pxTCB->uxPriority = uxNewPriority;
+    }
+}
+
+// 释放时恢复优先级
+void vTaskPriorityDisinherit(TaskHandle_t xTask) {
+    // 恢复到基优先级
+    if(pxTCB->uxPriority != pxTCB->uxBasePriority) {
+        pxTCB->uxPriority = pxTCB->uxBasePriority;
+    }
+}
+```
 
 ---
 
 ## 7. 安全特性
 
-### 7.1 内存保护
+### 7.1 MPU内存保护
 
-#### MPU配置与任务隔离
+#### 任务隔离
+
 ```c
-// ARM MPU配置示例
+// 静态MPU配置
 typedef struct {
-    uint8_t Enable;
-    uint8_t Number;
-    uint8_t BaseAddress;
-    uint8_t Size;
-    uint8_t AccessPermission;
-    uint8_t DisableExecute;
-    uint8_t TypeExtensionField;
-    uint8_t SubRegionDisable;
-} MPU_Region_InitTypeDef;
+    uint32_t ulRBAR;
+    uint32_t ulRASR;
+} xMPUSettings;
+
+StaticTask_t xTaskTCB;
+StackType_t xStack[STACK_SIZE];
+xMPUSettings xMPUSettings;
+
+void vTaskCode(void *pv) {
+    // 任务代码
+}
+
+void vCreateTask(void) {
+    TaskParameters_t xTaskParameters = {
+        .pvTaskCode = vTaskCode,
+        .puxStackBuffer = xStack,
+        .xMPUSettings = &xMPUSettings,
+        // 配置MPU区域
+        .xMPUSettings->ulRBAR = (0x20000000UL << 1) | 1;
+        // RW + User访问，无执行权限
+        .xMPUSettings->ulRASR =
+            (0x3UL << 19) |   // Size: 32KB
+            (0x1UL << 17) |   // XN: 禁止执行
+            (0x1UL << 15) |   // AP: 访问权限
+            (0x1UL << 8);     // ENABLE
+
+    xTaskCreateStaticRestricted(&xTaskParameters, NULL);
+}
 ```
 
-#### 用户态/内核态分离
-- 特权模式
-- 用户模式
-- 系统调用
+### 7.2 栈保护
 
-#### 系统调用过滤
-- 权限检查
-- 参数验证
+```c
+// 栈溢出保护
+void vApplicationStackOverflowHook(TaskHandle_t xTask,
+                                   char *pcTaskName) {
+    // 记录错误信息
+    error_log("Stack overflow in task: %s\n", pcTaskName);
 
-### 7.2 任务隔离
+    // 可选: 重启系统
+    NVIC_SystemReset();
+}
 
-#### 独立堆栈空间
-- 栈溢出检测
-- 独立地址空间
-
-#### 权限级别划分
-- 内核任务
-- 用户任务
-- 隔离机制
-
-#### 系统/用户任务区分
-- 任务属性
-- 访问控制
+// 内存分配失败钩子
+void vApplicationMallocFailedHook(void) {
+    configASSERT( ( volatile void * ) NULL );
+}
+```
 
 ### 7.3 安全认证
 
-#### IEC 61508功能安全
-- 工业控制系统
-- 安全完整性等级（SIL1-4）
+#### IEC 61508
 
-#### ISO 26262（汽车）
-- 汽车功能安全
-- ASIL A-D
+| SIL等级 | PFH (每小时危险失效概率) |
+|---------|-------------------------|
+| SIL 1   | 10⁻⁵ ≤ PFH < 10⁻⁴     |
+| SIL 2   | 10⁻⁶ ≤ PFH < 10⁻⁵     |
+| SIL 3   | 10⁻⁷ ≤ PFH < 10⁻⁶     |
+| SIL 4   | 10⁻⁸ ≤ PFH < 10⁻⁷     |
 
-#### DO-178C（航空）
-- 航空软件安全
-- 设计保证等级（DAL A-E）
+#### ISO 26262 (汽车)
 
-#### 安全完整性等级（SIL）
-- SIL 1-4
-- 失效概率要求
+| ASIL等级 | 目标 |
+|----------|------|
+| ASIL A   | 最低 |
+| ASIL B   | 中等 |
+| ASIL C   | 高   |
+| ASIL D   | 最高 |
 
 ---
 
 ## 8. 多核/SMP支持
 
-### 8.1 SMP对称多核
+### 8.1 核间通信
 
-#### 全局调度器vs per-core调度器
-- **全局调度器**：单一调度器管理所有核心
-- **per-core调度器**：每个核心独立调度
+#### 共享内存+信号量
 
-#### 核间负载均衡
-- 任务迁移
-- 负载检测
-- 均衡策略
-
-#### 亲和性调度
 ```c
-// 设置CPU亲和性
-BaseType_t xTaskCoreAffinitySet(TaskHandle_t xTask,
-                                 UBaseType_t uxCoreAffinityMask);
+// 共享内存区
+typedef struct {
+    volatile uint32_t flag;
+    volatile uint8_t data[256];
+} SharedMemory_t;
+
+__attribute__((section(".sram2"))) SharedMemory_t xShared;
+
+// 写数据
+void writeData(uint8_t *src, uint32_t len) {
+    // 等待访问权限
+    xSemaphoreTake(xSharedSem, portMAX_DELAY);
+
+    // 写入数据
+    memcpy(xShared.data, src, len);
+    xShared.flag = 1;
+
+    xSemaphoreGive(xSharedSem);
+}
+
+// 读数据
+void readData(uint8_t *dst, uint32_t len) {
+    xSemaphoreTake(xSharedSem, portMAX_DELAY);
+
+    if(xShared.flag) {
+        memcpy(dst, xShared.data, len);
+        xShared.flag = 0;
+    }
+
+    xSemaphoreGive(xSharedSem);
+}
 ```
 
-### 8.2 AMP异构多核
+#### Mailbox
 
-#### 内存分区
-- 物理内存划分
-- 访问权限控制
-- 隔离保护
+```c
+// 简单Mailbox实现
+typedef struct {
+    volatile void *msg;
+    volatile BaseType_t flag;
+} Mailbox_t;
 
-#### 核间通信
-- **Mailbox**：
-  ```c
-  typedef struct {
-      void *tx_buf;
-      void *rx_buf;
-      uint32_t size;
-  } mbox_msg;
-  ```
-- **共享内存**：
-  - 环形缓冲区
-  - 消息队列
-  - 信号量同步
+Mailbox_t xMailbox[4];
 
-#### 启动顺序控制
-- 主核先启动
-- 从核等待信号
-- 握手协议
+void sendMailbox(uint8_t index, void *msg) {
+    while(xMailbox[index].flag);  // 等待空闲
+    xMailbox[index].msg = msg;
+    xMailbox[index].flag = 1;
+}
 
-### 8.3 缓存一致性
+void* receiveMailbox(uint8_t index, TickType_t timeout) {
+    TickType_t start = xTaskGetTickCount();
+
+    while(!xMailbox[index].flag) {
+        if(xTaskGetTickCount() - start >= timeout) {
+            return NULL;
+        }
+    }
+
+    void *msg = (void *)xMailbox[index].msg;
+    xMailbox[index].flag = 0;
+    return msg;
+}
+```
+
+### 8.2 缓存一致性
 
 #### MESI协议
-- Modified: 已修改
-- Exclusive: 独占
-- Shared: 共享
-- Invalid: 无效
 
-#### 核间缓存同步
-- 硬件一致性协议
-- 软件维护一致性
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        MESI状态                             │
+├─────────────────────────────────────────────────────────────┤
+│  Modified (M):  修改状态，数据只在本核缓存                   │
+│                  需要写回主存                               │
+├─────────────────────────────────────────────────────────────┤
+│  Exclusive (E):  独占状态，数据只在本核缓存                  │
+│                  与主存一致                                │
+├─────────────────────────────────────────────────────────────┤
+│  Shared (S):     共享状态，数据在多核缓存中                  │
+│                  与主存一致                                │
+├─────────────────────────────────────────────────────────────┤
+│  Invalid (I):    无效状态，数据不在本核缓存                  │
+└─────────────────────────────────────────────────────────────┘
+```
 
-#### 内存屏障使用
+#### 内存屏障
+
 ```c
-__DMB();  // 数据内存屏障
-__ISB();  // 指令同步屏障
-__DSB();  // 数据同步屏障
+// ARM Cortex-R/A 内存屏障
+__DMB();   // 数据内存屏障
+__DSB();   // 数据同步屏障
+__ISB();   // 指令同步屏障
+
+// 使用示例
+void writeToShare(uint32_t value) {
+    shared_data = value;
+    __DMB();  // 确保写入完成
+
+    shared_flag = 1;
+    __DMB();  // 确保flag写入在data之后
+}
 ```
 
 ---
 
 ## 9. 调试技巧
 
-### 9.1 任务堆栈分析（水印检测）
+### 9.1 任务状态查看
 
-**栈溢出检测**：
 ```c
-// FreeRTOS配置
-#define configCHECK_FOR_STACK_OVERFLOW 2
+// FreeRTOS任务信息
+void printTaskInfo(void) {
+    char buffer[512];
+    vTaskList(buffer);
+    printf("Name          State  Prio  Stack  Num\n");
+    printf("%s\n", buffer);
+}
 
-void vApplicationStackOverflowHook(TaskHandle_t xTask,
-                                    char *pcTaskName) {
-    // 栈溢出处理
+// 运行时统计
+void printRunTimeStats(void) {
+    char buffer[512];
+    vTaskGetRunTimeStats(buffer);
+    printf("Task           AbsTime      %%\n");
+    printf("%s\n", buffer);
+}
+
+// 堆信息
+void printHeapInfo(void) {
+    printf("Free heap: %u bytes\n", xPortGetFreeHeapSize());
+    printf("Min ever free: %u bytes\n", xPortGetMinimumEverFreeHeapSize());
 }
 ```
 
-**水印检测**：
-```c
-UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t xTask);
-```
-
-### 9.2 任务CPU使用率统计
+### 9.2 Tracealyzer集成
 
 ```c
-// FreeRTOS+Trace使用
-void vTaskGetRunTimeStats(char *pcWriteBuffer);
-void vTaskList(char *pcWriteBuffer);
+// 简单事件跟踪
+#define TRACE_LABEL(x) #x
+
+void trace_task_create(TaskHandle_t pxTask) {
+    // 记录任务创建
+}
+
+void trace_task_switch_in(TaskHandle_t pxTask) {
+    // 记录任务切入
+}
+
+void trace_task_switch_out(TaskHandle_t pxTask) {
+    // 记录任务切出
+}
+
+// 在FreeRTOSConfig.h中配置
+#define traceTASK_SWITCHED_IN() trace_task_switch_in(xTaskGetCurrentTaskHandle())
+#define traceTASK_SWITCHED_OUT() trace_task_switch_out(xTaskGetCurrentTaskHandle())
 ```
 
-### 9.3 死锁检测工具
+### 9.3 性能分析
 
-**方法**：
-- 等待图分析
-- 超时检测
-- 资源请求图
+#### 中断响应时间测量
 
-### 9.4 性能分析（profiling）
-
-**工具**：
-- 示波器
-- 逻辑分析仪
-- Trace工具
-
-**分析方法**：
-- 函数执行时间
-- 中断频率
-- 调度延迟
-
-### 9.5 内存泄漏检测
-
-**方法**：
-- 分配跟踪
-- 泄漏检测钩子
-- 内存统计
-
-### 9.6 Trace调试
-
-**Tracealyzer**：
-- 任务执行可视化
-- 中断分析
-- 性能分析
-- 内存分析
-
-### 9.7 调试与性能优化
-
-#### 中断响应时间优化
-- 减少中断处理时间
-- 使用DMA卸载
-- 中断线程化
-
-#### 上下文切换优化
-- 减少任务数量
-- 合理优先级
-- 减少临界区
-
-#### 内存分配优化
-- 使用内存池
-- 预分配对象
-- 避免动态分配
-
-#### 调度延迟测量
 ```c
-// 测量调度延迟
-volatile uint32_t start, end;
-start = get_system_tick();
-/* 任务切换 */
-end = get_system_tick();
-uint32_t delay = end - start;
+volatile uint32_t ulEnterTime, ulExitTime;
+
+void vISR(void) {
+    ulEnterTime = DWT->CYCCNT;
+    // ISR处理
+    ulExitTime = DWT->CYCCNT;
+}
+
+// 计算执行时间
+uint32_t isrExecTime = ulExitTime - ulEnterTime;
 ```
 
-#### 优先级配置合理性分析
-- 实时任务高优先级
-- 避免优先级反转
-- 合理分组
+#### 上下文切换时间
 
-#### 栈溢出检测
-- 配置检测选项
-- 设置水印
-- 定期检查
+```c
+// 测量任务切换时间
+void measureContextSwitch(void) {
+    uint32_t start, end;
+
+    // 触发PendSV
+    start = DWT->CYCCNT;
+
+    // 设置PendSV触发
+    SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;
+
+    // 等待中断执行
+    while(!(SCB->ICSR & SCB_ICSR_PENDSVACT_Msk));
+
+    end = DWT->CYCCNT;
+
+    printf("Context switch: %u cycles\n", end - start);
+}
+```
 
 ---
 
 ## 附录
 
-### 常见面试问题
+### 常见面试问题汇总
 
-1. **FreeRTOS任务调度流程？**
-2. **优先级反转问题如何解决？**
-3. **任务间通信方式有哪些？**
-4. **内存管理方式及优缺点？**
-5. **中断与任务如何交互？**
+1. **FreeRTOS调度流程？**
+   - PendSV触发 → 保存上下文 → 选择新任务 → 恢复上下文 → 返回
+
+2. **优先级反转及解决？**
+   - 优先级继承、优先级天花板、SRP
+
+3. **任务间通信方式？**
+   - 队列、信号量、事件标志、任务通知
+
+4. **内存管理方式？**
+   - heap_1/2/3/4/5，静态分配，内存池
+
+5. **中断与任务交互？**
+   - FromISR API，延迟处理模式
+
 6. **如何保证实时性？**
-7. **多核调度需要注意什么？**
-8. **如何排查任务死锁？**
+   - 优先级配置，中断优化，栈大小合理
+
+7. **多核调度注意？**
+   - 同步保护，缓存一致性，内存屏障
+
+8. **栈溢出检测？**
+   - 水印检查，填充检查
 
 ---
 
-*文档版本：v1.0*
+*文档版本：v2.0 详细版*
 *更新时间：2026-03-05*

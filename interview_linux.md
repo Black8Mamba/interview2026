@@ -1,6 +1,7 @@
-# 嵌入式Linux面试知识点
+# 嵌入式Linux面试知识点（详细版）
 
 > 适用于高级嵌入式工程师岗位（智能硬件大厂）
+> 本文档涵盖Linux内核、驱动、ARM64架构等核心技术点
 
 ---
 
@@ -20,459 +21,567 @@
 ### 1.1 中断子系统
 
 #### 硬件中断处理流程
+
+Linux中断处理采用分层架构：
+
 ```
-1. 外设产生中断
-   ↓
-2. 中断控制器接收（GIC）
-   ↓
-3. CPU响应中断，跳转到向量表
-   ↓
-4. 执行中断处理函数（顶半部）
-   ↓
-5. 触发软中断/工作队列（底半部）
-   ↓
-6. 中断返回
+┌─────────────────────────────────────────────────────────────────┐
+│                    Linux中断处理架构                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   外设          中断控制器           内核                        │
+│   ─────        ───────────        ──────                       │
+│                                                                  │
+│   IRQ ──────→  GIC ──────→  Linux IRQ Domain ──→ ISR       │
+│                   │                                              │
+│                   ├──→ 硬件处理(顶半部)                        │
+│                   │        ↓                                    │
+│                   ├──→ 软中断/Tasklet(底半部)                 │
+│                   │        ↓                                    │
+│                   └──→ Workqueue(延迟处理)                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-#### 软中断（Softirq）
-- 优先级高于进程
-- 不可睡眠
-- 静态分配（32个）
-
-**常见软中断类型**：
-| 序号 | 名称 | 说明 |
-|------|------|------|
-| 0 | HI_SOFTIRQ | 高优先级tasklet |
-| 1 | TIMER_SOFTIRQ | 定时器 |
-| 2 | NET_TX_SOFTIRQ | 网络发送 |
-| 3 | NET_RX_SOFTIRQ | 网络接收 |
-| 4 | BLOCK_SOFTIRQ | 块设备 |
-| 5 | IRQ_POLL_SOFTIRQ | IRQ轮询 |
-| 6 | TASKLET_SOFTIRQ | 普通tasklet |
-| 7 | SCHED_SOFTIRQ | 调度软中断 |
-| 8 | HRTIMER_SOFTIRQ | 高精度定时器 |
-| 9 | RCU_SOFTIRQ | RCU回调 |
-
-#### Tasklet机制
-- 基于软中断实现
-- 动态创建
-- 不可并发
+#### 中断描述符
 
 ```c
-// Tasklet示例
-void my_tasklet_func(unsigned long data) {
-    /* 底半部处理 */
-}
+struct irq_desc {
+    struct irq_data             irq_data;
+    irq_flow_handler_t          handle_irq;       // 流向处理函数
+    struct irqaction            *action;          // 中断动作链表
+    const char                  *name;            // 中断名称
+    raw_spinlock_t              lock;             // 保护锁
+    struct irq_domain          *domain;          // IRQ域
+    void                        *handler_data;    // 私有数据
+    // ...
+};
 
-DECLARE_TASKLET(my_tasklet, my_tasklet_func, data);
-tasklet_schedule(&my_tasklet);
-```
-
-#### 工作队列（Workqueue）
-- 在进程上下文执行
-- 可以睡眠
-- 支持延迟执行
-
-```c
-// 工作队列示例
-void my_work_func(struct work_struct *work) {
-    /* 工作处理 */
-}
-
-DECLARE_WORK(my_work, my_work_func);
-schedule_work(&my_work);
-```
-
-#### 顶半部/底半部机制
-- **顶半部**：紧急处理，必须快
-- **底半部**：耗时处理，可以延迟
-
-#### 中断上下文与进程上下文
-| 上下文 | 特点 | 允许操作 |
-|--------|------|----------|
-| 中断上下文 | 紧急、原子、不可睡眠 | 简单处理 |
-| 进程上下文 | 正常执行、可睡眠 | 所有操作 |
-
-#### 中断线程化（IRQF_THREADED）
-- 中断处理作为内核线程
-- 可调度、可睡眠
-- 优先级可配置
-
-```c
-request_threaded_irq(irq, handler, thread_fn,
-                     IRQF_ONESHOT, "my_irq", dev);
-```
-
-#### 中断亲和性
-```c
-// 设置中断亲和性
-irq_set_affinity_hint(irq, cpumask_of(cpu));
-
-// 查看中断统计
-cat /proc/interrupts
-```
-
-### 1.2 进程管理
-
-#### 进程/线程创建
-
-**fork()**：
-- 创建子进程
-- 复制父进程资源
-- 返回两次
-
-**exec()**：
-- 替换进程映像
-- 加载新程序
-
-**clone()**：
-- 创建轻量级进程/线程
-- 可共享资源
-
-**pthread_create()**：
-```c
-int pthread_create(pthread_t *thread,
-                   const pthread_attr_t *attr,
-                   void *(*start_routine)(void *),
-                   void *arg);
-```
-
-#### 进程状态
-| 状态 | 说明 |
-|------|------|
-| R (Running) | 运行或就绪 |
-| S (Sleeping) | 可中断睡眠 |
-| D (Disk Sleep) | 不可中断睡眠 |
-| T (Stopped) | 停止 |
-| Z (Zombie) | 僵尸 |
-| X (Dead) | 死亡 |
-
-#### 进程调度器（CFS原理）
-- **完全公平调度器**
-- 基于虚拟运行时间(vruntime)
-- 红黑树管理
-
-**vruntime计算**：
-```c
-vruntime += delta_exec * NICE_0_LOAD / weight
-```
-
-#### 实时调度策略
-| 策略 | 说明 |
-|------|------|
-| SCHED_FIFO | 先进先出，无时间片 |
-| SCHED_RR | 时间片轮询 |
-| SCHED_DEADLINE | 截止时间优先 |
-
-```c
-struct sched_attr {
-    __u32 size;
-    __u32 sched_policy;
-    __u64 sched_flags;
-    __s64 sched_runtime;
-    __u64 sched_deadline;
-    __u64 sched_period;
+struct irqaction {
+    irq_handler_t             handler;           // 中断处理函数
+    void                       *dev_id;         // 设备ID
+    void                       *handler_data;
+    const char                 *name;            // 中断名
+    struct irqaction           *next;           // 下一个动作
+    int                        irq;             // IRQ号
+    unsigned int               flags;           // 标志
 };
 ```
 
-#### 进程间通信
+#### 注册中断
 
-**管道/命名管道**：
-- 字节流
-- 单向/双向
-- 亲缘进程
+```c
+// 申请中断
+int request_irq(unsigned int irq,
+                irq_handler_t handler,
+                unsigned long flags,
+                const char *name,
+                void *dev);
 
-**消息队列**：
-- 链表实现
-- 消息类型
-- 容量有限
+static irqreturn_t my_irq_handler(int irq, void *dev_id) {
+    // 检查中断是否来自本设备
+    if(!(reg->STATUS & MY_IRQ_FLAG))
+        return IRQ_NONE;
 
-**共享内存**：
-- 最高效IPC
-- 需要同步
-- mmap/shmget
+    // 处理中断
+    handle_my_irq();
 
-**信号量**：
-- 计数器
-- P/V操作
-- 互斥/同步
+    return IRQ_HANDLED;
+}
 
-**信号（signal）**：
-- 异步通知
-- 常见信号：SIGKILL/SIGSTOP/SIGINT
+// 在驱动初始化中
+static int __init my_driver_init(void) {
+    int ret;
 
-**Socket**：
-- 本地套接字
-- 网络套接字
-- 支持不同协议
+    ret = request_irq(irq_num,
+                       my_irq_handler,
+                       IRQF_SHARED | IRQF_ONESHOT,
+                       "my_driver",
+                       &my_device);
 
-#### 进程组与会话
-- 进程组：相关进程集合
-- 会话：进程组集合
-- 守护进程：独立会话
+    return ret;
+}
 
-#### 用户/内核态切换
-- 系统调用
-- 异常
-- 中断
-
-#### 系统调用机制
-
-**x86_64系统调用**：
-```asm
-mov rax, [syscall_number]
-mov rdi, [arg1]
-mov rsi, [arg2]
-mov rdx, [arg3]
-syscall
-ret
+// 释放中断
+void free_irq(unsigned int irq, void *dev_id);
 ```
 
-**ARM64系统调用**：
-```asm
-mov x8, [syscall_number]
-mov x0, [arg1]
-mov x1, [arg2]
-svc #0
-ret
+### 1.2 软中断（Softirq）
+
+#### 软中断类型
+
+```c
+// 定义在 linux/interrupt.h
+enum {
+    HI_SOFTIRQ,          // 高优先级tasklet
+    TIMER_SOFTIRQ,        // 定时器
+    NET_TX_SOFTIRQ,      // 网络发送
+    NET_RX_SOFTIRQ,      // 网络接收
+    BLOCK_SOFTIRQ,        // 块设备
+    IRQ_POLL_SOFTIRQ,     // IRQ轮询
+    TASKLET_SOFTIRQ,      // 普通tasklet
+    SCHED_SOFTIRQ,        // 调度
+    HRTIMER_SOFTIRQ,      // 高精度定时器
+    RCU_SOFTIRQ,          // RCU回调
+    NR_SOFTIRQS
+};
+
+// 注册软中断
+void open_softirq(int nr, void (*action)(struct softirq_action *));
+
+// 触发软中断
+void raise_softirq(unsigned int nr);
+
+// 处理软中断
+asmlinkage void do_softirq(void);
 ```
 
-### 1.3 内存管理
+#### 软中断处理流程
 
-#### 虚拟内存原理
-- 每个进程独立虚拟地址空间
-- 页表映射到物理内存
-- 缺页异常加载数据
+```c
+// 内核启动软中断处理
+void __do_softirq(void) {
+    struct softirq_action *h;
+    unsigned long pending;
+    unsigned int max_restart = MAX_SOFTIRQ_RESTART;
 
-#### 页表结构
+    pending = local_softirq_pending();
 
-**多级页表**：
-- x86_64：4级页表（PGD→PUD→PMD→PTE）
-- ARM64：4级/5级页表
+restart:
+    // 清除挂起标志
+    local_softirq_disable();
+    local_softirq_enable();
 
-**页表项内容**：
-- 页帧号
-- 访问权限
-- 缓存属性
+    // 遍历软中断向量
+    h = softirq_vec;
+    do {
+        if(pending & 1) {
+            h->action(h);  // 执行处理函数
+            rcu_bh_qs(current);
+        }
+        h++;
+        pending >>= 1;
+    } while(pending);
 
-#### 页面分配器（Buddy System）
+    // 检查是否有新的软中断
+    pending = local_softirq_pending();
+    if(pending && --max_restart)
+        goto restart;
+}
+```
 
-**原理**：
-- 按阶（order）管理
-- 相邻空闲页合并
-- 减少外部碎片
+### 1.3 Tasklet机制
 
-**阶（Order）**：
-- order 0：1页（4KB）
-- order 1：2页（8KB）
-- order n：2^n页
+```c
+// 定义tasklet
+void my_tasklet_func(unsigned long data);
+DECLARE_TASKLET(my_tasklet, my_tasklet_func, data);
+
+// 或者
+DECLARE_TASKLET_DISABLED(my_tasklet, my_tasklet_func, data);
+
+// 在中断处理中调度tasklet
+void interrupt_handler(int irq, void *dev) {
+    // 只做简单处理
+    tasklet_schedule(&my_tasklet);  // 调度到软中断上下文
+}
+
+// tasklet处理函数
+void my_tasklet_func(unsigned long data) {
+    // 可以睡眠的处理
+    process_data();
+}
+```
+
+### 1.4 工作队列
+
+#### 专用工作队列
+
+```c
+// 创建工作
+struct work_struct my_work;
+INIT_WORK(&my_work, work_handler);
+
+void work_handler(struct work_struct *work) {
+    // 在进程上下文执行，可以睡眠
+    do_something();
+}
+
+// 调度工作
+schedule_work(&my_work);
+
+// 延迟工作
+schedule_delayed_work(&my_delayed_work, delay);
+
+// 刷新队列
+flush_scheduled_work();
+```
+
+#### 共享工作队列
+
+```c
+// 创建workqueue
+struct workqueue_struct *my_wq;
+my_wq = create_workqueue("my_wq");
+
+// 创建工作
+INIT_WORK(&my_work, work_handler);
+queue_work(my_wq, &my_work);
+
+// 销毁
+destroy_workqueue(my_wq);
+```
+
+### 1.5 进程管理
+
+#### 进程创建
+
+```c
+// fork系统调用
+pid_t pid = fork();
+if(pid == 0) {
+    // 子进程
+    execve("/path/to/program", argv, envp);
+} else if(pid > 0) {
+    // 父进程
+    waitpid(pid, &status, 0);
+}
+
+// clone系统调用
+int clone(int (*fn)(void *), void *stack, int flags, void *arg, ...);
+
+// pthread创建
+pthread_t thread;
+pthread_create(&thread, NULL, thread_func, arg);
+pthread_join(thread, NULL);
+```
+
+#### 进程状态
+
+```
+                  ┌──────────┐
+                  │  运行    │
+                  │ (Running)│
+                  └────┬─────┘
+                       │
+         ┌─────────────┼─────────────┐
+         │             │             │
+    ┌────▼────┐ ┌────▼────┐ ┌────▼────┐
+    │ 就绪     │ │ 睡眠    │ │ 停止    │
+    │(Ready)  │ │(Sleep)  │ │(Stopped)│
+    └────┬────┘ └────┬────┘ └────┬────┘
+         │             │             │
+         └─────────────┼─────────────┘
+                       │
+                  ┌────▼────┐
+                  │ 僵尸    │
+                  │(Zombie) │
+                  └─────────┘
+```
+
+### 1.6 内存管理
+
+#### 页表结构（ARM64）
+
+```c
+// ARM64页表项
+typedef struct {
+    unsigned long pte;  // 页表项值
+} pte_t;
+
+#define PTE_VALID        (_AT(pte_t, 1) << 0)
+#define PTE_USER         (_AT(pte_t, 1) << 6)
+#define PTE_AF           (_AT(pte_t, 1) << 10)   // Accessed
+#define PTE_SHARED       (_AT(pte_t, 3) << 8)    // Shareable
+#define PTE_ATTRINDX(n)  (_AT(pte_t, n) << 2)   // 内存类型索引
+#define PTE_NS           (_AT(pte_t, 1) << 5)     // Non-secure
+
+// 页表级别
+// 4级页表: PGD -> PUD -> PMD -> PTE
+// VA: [63:48][47:39][38:30][29:21][20:12][11:0]
+//       |      |      |      |      |
+//      PGD    PUD    PMD   PTE   Offset
+```
+
+#### Buddy System
+
+```c
+// 伙伴系统分配
+struct page *alloc_pages(gfp_t gfp_mask, unsigned int order);
+void __free_pages(struct page *page, unsigned int order);
+
+// 分配页面
+struct page *page = alloc_pages(GFP_KERNEL, 0);  // 4KB
+void *page_addr = page_address(page);
+
+// 释放
+__free_pages(page, 0);
+```
 
 #### Slab分配器
 
-**kmem_cache**：
-- 专用对象缓存
-- 减少碎片
-- 提高分配效率
-
-**常用缓存**：
-- task_struct
-- dentry
-- inode
-
-#### 内存映射（mmap）
-
 ```c
-void *mmap(void *addr, size_t length,
-           int prot, int flags, int fd, off_t offset);
+// 创建slab缓存
+struct kmem_cache *my_cache;
+my_cache = kmem_cache_create("my_cache",
+                              sizeof(struct my_obj),
+                              align,
+                              SLAB_HWCACHE_ALIGN,
+                              ctor,
+                              dtor);
 
-munmap(void *addr, size_t length);
+// 分配对象
+struct my_obj *obj = kmem_cache_alloc(my_cache, GFP_KERNEL);
+
+// 释放对象
+kmem_cache_free(my_cache, obj);
+
+// 销毁缓存
+kmem_cache_destroy(my_cache);
 ```
 
-#### 缺页异常处理
+### 1.7 文件系统
 
-**页面不在内存**：
-1. 查找页表
-2. 分配物理页
-3. 读取数据
-4. 更新页表
-5. 继续执行
+#### VFS数据结构
 
-#### 内存回收（LRU、kswapd）
-
-**LRU（最近最少使用）**：
-- active_list
-- inactive_list
-- 按年龄排序
-
-**kswapd**：
-- 后台页面回收
-- 页面置换
-- 保持内存水位
-
-#### 内存压缩（compaction）
-- 移动页面合并
-- 解决内部碎片
-
-#### 大页内存（HugeTLB）
-- 2MB/1GB页面
-- 减少页表开销
-
-```bash
-# 配置大页
-echo 20 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        VFS架构                                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   ┌──────────┐   ┌──────────┐   ┌──────────┐               │
+│   │  应用     │   │  应用     │   │  应用     │               │
+│   └────┬─────┘   └────┬─────┘   └────┬─────┘               │
+│        │               │               │                       │
+│        └───────────────┼───────────────┘                       │
+│                        ↓                                       │
+│               ┌────────────────┐                              │
+│               │  系统调用接口   │                              │
+│               │  open/read/write                              │
+│               └────────┬────────┘                              │
+│                        ↓                                       │
+│               ┌────────────────┐                              │
+│               │   inode_operations                             │
+│               │   file_operations                             │
+│               └────────┬────────┘                              │
+│                        ↓                                       │
+│   ┌──────────────────────────────────────────────────────┐    │
+│   │                   VFS层                                 │    │
+│   │  super_block → inode → dentry → file                │    │
+│   └────────┬─────────────────────────────────────────────┘    │
+│            ↓                                                   │
+│   ┌──────────────────────────────────────────────────────┐    │
+│   │              具体文件系统 (ext4/f2fs/ubifs)            │    │
+│   └──────────────────────────────────────────────────────┘    │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-#### 内存控制组（memcg）
-- 限制内存使用
-- 统计内存使用
-- cgroup v2
+#### 文件系统挂载
 
-### 1.4 文件系统
-
-#### VFS虚拟文件系统
-
-**四大对象**：
-- super_block：超级块
-- inode：索引节点
-- dentry：目录项
-- file：文件
-
-**文件系统注册**：
 ```c
+// 注册文件系统
+register_filesystem(&my_fs_type);
+
 static struct file_system_type my_fs_type = {
     .name = "myfs",
     .mount = my_mount,
     .kill_sb = kill_block_super,
+    .owner = THIS_MODULE,
 };
-register_filesystem(&my_fs_type);
+
+// 挂载
+mount("/dev/mtdblock0", "/mnt", "myfs", 0, NULL);
+
+// 卸载
+umount("/mnt");
 ```
-
-#### 常见文件系统
-
-| 文件系统 | 特点 | 应用场景 |
-|----------|------|----------|
-| ext4 | 日志文件系统，成熟稳定 | 通用 |
-| f2fs | 闪存优化 | 嵌入式存储 |
-| ubifs | 大容量闪存 | NAND Flash |
-| squashfs | 只读压缩 | 嵌入式系统 |
-| tmpfs | 内存文件系统 | 临时文件 |
-
-#### 文件描述符
-- 进程私有
-- 指向file结构
-- 整数标识
-
-#### 索引节点（inode）
-- 文件元数据
-- 唯一编号
-- 磁盘/内存缓存
-
-#### 块设备层
-
-**bio结构**：
-- 面向块的I/O
-- 分散/聚集I/O
-
-**request结构**：
-- 队列请求
-- 合并优化
-- 调度算法
-
-#### IO调度器
-
-| 调度器 | 特点 | 场景 |
-|--------|------|------|
-| noop | 先进先出 | SSD |
-| deadline | 截止时间 | 实时 |
-| cfq | 完全公平 | 通用 |
-| mq-deadline | 多队列 | NVMe |
 
 ---
 
 ## 2. 驱动子系统
 
-### 2.1 基础框架
+### 2.1 字符设备驱动
 
-#### Character/Block/Network驱动区别
-
-| 类型 | 特点 | 示例 |
-|------|------|------|
-| Character | 字节流/字符 | 串口、输入设备 |
-| Block | 块设备 | 磁盘、U盘 |
-| Network | 网络数据包 | 网卡 |
-
-#### Platform设备驱动模型
 ```c
-// 平台设备
-struct platform_device {
-    const char *name;
-    int id;
-    struct device dev;
-    struct resource *resource;
-    // ...
+// 字符设备结构
+static int mydev_open(struct inode *inode, struct file *filp);
+static int mydev_release(struct inode *inode, struct file *filp);
+static ssize_t mydev_read(struct file *filp, char __user *buf,
+                         size_t count, loff_t *ppos);
+static ssize_t mydev_write(struct file *filp, const char __user *buf,
+                          size_t count, loff_t *ppos);
+
+static struct file_operations mydev_fops = {
+    .owner   = THIS_MODULE,
+    .open    = mydev_open,
+    .release = mydev_release,
+    .read    = mydev_read,
+    .write   = mydev_write,
+    .llseek  = default_llseek,
 };
 
-// 平台驱动
-struct platform_driver {
-    int (*probe)(struct platform_device *);
-    int (*remove)(struct platform_device *);
-    struct device_driver driver;
-    // ...
-};
+// 注册字符设备
+static int __init mydev_init(void) {
+    dev_t devno;
+    int ret;
+
+    // 分配设备号
+    ret = alloc_chrdev_region(&devno, 0, 1, "mydev");
+    if(ret < 0) return ret;
+
+    // 初始化cdev
+    cdev_init(&mydev_cdev, &mydev_fops);
+    mydev_cdev.owner = THIS_MODULE;
+
+    // 添加cdev
+    ret = cdev_add(&mydev_cdev, devno, 1);
+    if(ret < 0) goto fail;
+
+    return 0;
+
+fail:
+    unregister_chrdev_region(devno, 1);
+    return ret;
+}
+
+// 设备节点创建
+// mknod /dev/mydev c 240 0
 ```
 
-#### Device Tree（OF解析）
+### 2.2 Platform设备驱动
 
-**节点结构**：
-```dts
+```c
+// Platform驱动
+static int my_probe(struct platform_device *dev);
+static int my_remove(struct platform_device *dev);
+
+static const struct of_device_id my_of_match[] = {
+    { .compatible = "my,device", },
+    { }
+};
+MODULE_DEVICE_TABLE(of, my_of_match);
+
+static struct platform_driver my_driver = {
+    .probe  = my_probe,
+    .remove = my_remove,
+    .driver = {
+        .name = "my_driver",
+        .of_match_table = my_of_match,
+    }
+};
+
+module_platform_driver(my_driver);
+
+// Platform设备(设备树)
 &i2c1 {
     status = "okay";
-    temp-sensor@48 {
-        compatible = "ti,tmp105";
+    my_device@48 {
+        compatible = "my,device";
         reg = <0x48>;
+        interrupts = <0 IRQ_TYPE_EDGE_FALLING>;
+        my-gpios = <&gpio1 0 GPIO_ACTIVE_HIGH>;
     };
 };
 ```
 
-**OF API**：
+### 2.3 I2C驱动
+
 ```c
-struct device_node *np = of_find_node_by_path("/soc/i2c1");
-of_property_read_u32(np, "clock-frequency", &val);
-of_get_named_gpio(np, "reset-gpios", 0);
+// I2C驱动
+static int my_i2c_probe(struct i2c_client *client,
+                        const struct i2c_device_id *id);
+static int my_i2c_remove(struct i2c_client *client);
+
+static const struct i2c_device_id my_i2c_id[] = {
+    { "my_i2c_device", 0 },
+    { }
+};
+
+static struct i2c_driver my_i2c_driver = {
+    .probe    = my_i2c_probe,
+    .remove   = my_i2c_remove,
+    .id_table = my_i2c_id,
+    .driver   = {
+        .name = "my_i2c",
+        .of_match_table = of_match_ptr(my_of_match),
+    },
+};
+
+module_i2c_driver(my_i2c_driver);
+
+// I2C通信
+static int i2c_read_reg(struct i2c_client *client,
+                       u8 reg, u8 *val) {
+    int ret;
+    u8 buf[1] = { reg };
+
+    struct i2c_msg msgs[2] = {
+        { .addr = client->addr, .flags = 0, .len = 1, .buf = buf },
+        { .addr = client->addr, .flags = I2C_M_RD, .len = 1, .buf = val },
+    };
+
+    ret = i2c_transfer(client->adapter, msgs, 2);
+    return (ret == 2) ? 0 : ret;
+}
+
+static int i2c_write_reg(struct i2c_client *client,
+                        u8 reg, u8 val) {
+    u8 buf[2] = { reg, val };
+    return i2c_master_send(client, buf, 2);
+}
 ```
 
-#### Linux设备模型
+### 2.4 SPI驱动
 
-**核心结构**：
-- kobject：基础对象
-- kset：kobject集合
-- device：设备
-- driver：驱动
-- bus：总线
-
-**关系**：
-```
-bus
-├── driver
-└── device
-```
-
-#### 模块加载与卸载
 ```c
-module_init(my_init);
-module_exit(my_exit);
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Author");
-MODULE_DESCRIPTION("Driver Description");
+// SPI驱动
+static int my_spi_probe(struct spi_device *spi);
+static int my_spi_remove(struct spi_device *spi);
+
+static const struct of_device_id my_spi_of_match[] = {
+    { .compatible = "my,spi_device", },
+    { }
+};
+
+static struct spi_driver my_spi_driver = {
+    .probe    = my_spi_probe,
+    .remove   = my_spi_remove,
+    .driver   = {
+        .name = "my_spi",
+        .of_match_table = my_spi_of_match,
+    },
+};
+
+module_spi_driver(my_spi_driver);
+
+// SPI数据传输
+static int spi_read_reg(struct spi_device *spi, u8 reg, u8 *val) {
+    int ret;
+    u8 tx_buf[2] = { reg, 0 };
+    u8 rx_buf[2];
+
+    struct spi_transfer tr[] = {
+        { .tx_buf = tx_buf, .rx_buf = rx_buf, .len = 2 },
+    };
+
+    ret = spi_sync_transfer(spi, tr, 1);
+    *val = rx_buf[1];
+    return ret;
+}
+
+static int spi_write_reg(struct spi_device *spi, u8 reg, u8 val) {
+    u8 tx_buf[2] = { reg, val };
+    return spi_write(spi, tx_buf, 2);
+}
 ```
 
-### 2.2 常见驱动
-
-#### GPIO子系统（gpiolib）
+### 2.5 GPIO子系统
 
 ```c
 // 申请GPIO
 int gpio_request(unsigned gpio, const char *label);
+void gpio_free(unsigned gpio);
 
 // 设置方向
 int gpio_direction_input(unsigned gpio);
@@ -482,27 +591,36 @@ int gpio_direction_output(unsigned gpio, int value);
 int gpio_set_value(unsigned gpio, int value);
 int gpio_get_value(unsigned gpio);
 
-// 释放
-void gpio_free(unsigned gpio);
-
-// GPIO映射（ARM）
-gpiochip_add_data_with_key();
+// 使用GPIO描述符(Linux 4.8+)
+struct gpio_desc *gpiod_get(struct device *dev,
+                            const char *con_id,
+                            enum gpiod_flags flags);
+int gpiod_direction_input(struct gpio_desc *desc);
+int gpiod_direction_output(struct gpio_desc *desc, int value);
+int gpiod_get_value(struct gpio_desc *desc);
+void gpiod_set_value(struct gpio_desc *desc, int value);
 ```
 
-#### Pinctrl子系统
+### 2.6 pinctrl子系统
 
 ```c
 // 获取pinctrl
-struct pinctrl *p = devm_pinctrl_get_select_default(&dev);
+struct pinctrl *pinctrl = devm_pinctrl_get_select_default(&dev);
+if(IS_ERR(pinctrl)) return PTR_ERR(pinctrl);
 
-// 设置状态
-pinctrl_lookup_state();
-pinctrl_select_state();
-```
+// 获取特定状态
+struct pinctrl_state *state = pinctrl_lookup_state(pinctrl, "sleep");
+pinctrl_select_state(pinctrl, state);
 
-**Device Tree配置**：
-```dts
+// Device Tree配置
 &pinctrl {
+    my_pins: my-pins {
+        pins = "PA0", "PA1";
+        function = "gpio";
+        bias-pull-up;
+        drive-strength = <8>;
+    };
+
     uart1_pins: uart1-pins {
         pins = "PA9", "PA10";
         function = "uart1";
@@ -510,182 +628,73 @@ pinctrl_select_state();
 };
 ```
 
-#### I2C驱动框架
+### 2.7 网络驱动
 
 ```c
-// I2C适配器驱动
-struct i2c_driver {
-    int (*probe)(struct i2c_client *, const struct i2c_device_id *);
-    int (*remove)(struct i2c_client *);
-    struct device_driver driver;
+// 网络设备结构
+static int my_net_open(struct net_device *dev);
+static int my_net_stop(struct net_device *dev);
+static netdev_tx_t my_net_start_xmit(struct sk_buff *skb,
+                                      struct net_device *dev);
+static struct net_device_stats *my_net_get_stats(struct net_device *dev);
+
+static const struct net_device_ops my_netdev_ops = {
+    .ndo_open        = my_net_open,
+    .ndo_stop        = my_net_stop,
+    .ndo_start_xmit = my_net_start_xmit,
+    .ndo_get_stats  = my_net_get_stats,
 };
 
-// I2C设备
-struct i2c_client {
-    unsigned short addr;
-    struct i2c_adapter *adapter;
-    struct device dev;
-};
+static int my_net_probe(struct platform_device *pdev) {
+    struct net_device *ndev;
+    int ret;
 
-// 发送/接收
-i2c_master_send();
-i2c_master_recv();
-i2c_transfer();
-i2c_smbus_read_byte_data();
-```
+    ndev = alloc_etherdev(sizeof(struct my_priv));
+    ndev->netdev_ops = &my_netdev_ops;
+    ndev->ethtool_ops = &my_ethtool_ops;
 
-#### SPI驱动框架
+    ret = register_netdev(ndev);
+    if(ret) goto fail;
 
-```c
-// SPI驱动
-struct spi_driver {
-    int (*probe)(struct spi_device *);
-    int (*remove)(struct spi_device *);
-    struct device_driver driver;
-};
+    return 0;
 
-// SPI设备
-struct spi_device {
-    struct spi_master *master;
-    u32 max_speed_hz;
-    u8 chip_select;
-    u8 mode;
-    u8 bits_per_word;
-};
-
-// 传输
-spi_sync();
-spi_write();
-spi_read();
-spi_write_and_read();
-```
-
-#### MMC/SD驱动
-
-**SDHCI**：
-- SD Host Controller Interface
-- 标准接口
-
-**主要操作**：
-- 识别卡类型
-- 读取CID/CSD
-- 块读写
-
-#### USB驱动
-
-**设备端驱动**：
-- Gadget驱动
-- Function驱动
-
-**主机端驱动**：
-- Hub驱动
-- 类驱动（HID/CDC/MSC）
-
-```c
-// USB驱动
-struct usb_driver {
-    int (*probe)(struct usb_interface *, const struct usb_device_id *);
-    void (*disconnect)(struct usb_interface *);
-    struct device_driver driver;
-};
-
-// 端点操作
-usb_bulk_msg();
-usb_control_msg();
-```
-
-#### 网络驱动（NAPI、sk_buff）
-
-**NAPI**：
-- 轮询+中断混合
-- 高性能收包
-
-```c
-static int my_poll(struct napi_struct *napi, int budget) {
-    while (received < budget) {
-        skb = my_receive_skb();
-        netif_receive_skb(skb);
-        received++;
-    }
-    if (received < budget)
-        napi_complete(napi);
-    return received;
+fail:
+    free_netdev(ndev);
+    return ret;
 }
-```
-
-**sk_buff**：
-- 网络数据包结构
-- 零拷贝支持
-- 头部操作
-
-#### Framebuffer驱动
-
-```c
-struct fb_info {
-    struct fb_var_screeninfo var;
-    struct fb_fix_screeninfo fix;
-    struct fb_ops *fbops;
-    char __iomem *screen_base;
-};
-
-fb_set_par();
-fb_setcolreg();
-fb_fillrect();
-fb_copyarea();
-fb_imageblit();
-```
-
-#### Input子系统
-
-```c
-struct input_dev {
-    const char *name;
-    unsigned long evbit[BITS_TO_LONGS(EV_CNT)];
-    // ...
-};
-
-input_allocate_device();
-input_register_device();
-input_event(input, EV_KEY, KEY_A, 1);
-input_sync(input);
-```
-
-#### ALSA声卡驱动
-
-```c
-struct snd_card {
-    struct device *dev;
-    char *id;
-    struct snd_card *next;
-    // ...
-};
-
-struct snd_pcm {
-    struct snd_pcm_ops *ops;
-    struct snd_pcm_substream *streams;
-};
-
-snd_pcm_new();
-snd_pcm_ops();
 ```
 
 ---
 
 ## 3. 任务调度
 
-### 3.1 CFS调度器原理
+### 3.1 CFS调度器
 
-#### 红黑树
-- 自平衡二叉树
-- O(log n)查找
-- 按vruntime排序
+#### 原理
 
-#### vruntime
+CFS(Completely Fair Scheduler)使用红黑树管理任务，按虚拟运行时间(vruntime)排序：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CFS红黑树                                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│                         [vruntime=80]                         │
+│                        /         \                              │
+│              [60]                       [100]                 │
+│             /     \                   /      \                │
+│         [40]       [55]           [90]        [120]         │
+│                                                                  │
+│  任务运行时间 = 实际运行时间 * (nice0权重 / 任务权重)          │
+│  vruntime += delta_exec * (nice0_weight / task_weight)        │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 权重表
+
 ```c
-// 计算
-vruntime += delta_exec * NICE_0_LOAD / weight;
-
-// 权重表
+// nice值到权重映射
 const int sched_prio_to_weight[40] = {
     /* -20 */ 88761, 71755, 56483, 46273, 36291,
     /* -15 */ 29154, 23254, 18705, 14949, 11916,
@@ -697,240 +706,199 @@ const int sched_prio_to_weight[40] = {
 };
 ```
 
-### 3.2 O(1)调度器
-- 已废弃
-- 2.6内核使用
-- 优先级数组实现
-
-### 3.3 实时调度类
-
-**SCHED_FIFO**：
-- 一直运行直到完成
-- 更高优先级抢占
-
-**SCHED_RR**：
-- 时间片轮询
-- 同优先级轮换
-
-**SCHED_DEADLINE**：
-- Earliest Deadline First
-- 实时任务保障
-
-### 3.4 调度延迟分析
-
-**延迟组成**：
-1. 中断延迟
-2. 调度延迟
-3. 上下文切换
-
-### 3.5 CPU亲和性
+### 3.2 实时调度
 
 ```c
-// 设置亲和性
+// 设置实时调度策略
+struct sched_param param;
+param.sched_priority = 99;  // 最高优先级
+
+// FIFO调度
+sched_setscheduler(pid, SCHED_FIFO, &param);
+
+// RR调度
+sched_setscheduler(pid, SCHED_RR, &param);
+
+// Deadline调度
+struct sched_attr attr = {
+    .size = sizeof(attr),
+    .sched_policy = SCHED_DEADLINE,
+    .sched_runtime = 10000000,   // 10ms
+    .sched_period = 10000000,   // 周期10ms
+    .sched_deadline = 10000000, // 截止时间10ms
+};
+sched_setattr(pid, &attr, 0);
+```
+
+### 3.3 CPU亲和性
+
+```c
+// 设置CPU亲和性
 cpu_set_t cpuset;
 CPU_ZERO(&cpuset);
 CPU_SET(0, &cpuset);
+CPU_SET(1, &cpuset);
+
 sched_setaffinity(0, sizeof(cpuset), &cpuset);
 
-// 获取亲和性
+// 获取CPU亲和性
 sched_getaffinity(0, sizeof(cpuset), &cpuset);
+
+// 每个CPU运行独立任务
+for(i = 0; i < num_cpus; i++) {
+    CPU_ZERO(&cpuset);
+    CPU_SET(i, &cpuset);
+    sched_setaffinity(tids[i], sizeof(cpuset), &cpuset);
+}
 ```
-
-### 3.6 调度域与负载均衡
-
-**调度域层次**：
-- NUMA域
-- LLC域（最后一级缓存）
-- CPU核
-
-**负载均衡**：
-- 定期检查
-- 跨核迁移
-
-### 3.7 组调度
-- 控制组(Cgroup)调度
-- 公平调度组
-- 资源限制
 
 ---
 
 ## 4. ARM64架构
 
-### 4.1 ARM64基础
+### 4.1 异常级别
 
-#### AArch64指令集
-- 64位架构
-- 32位兼容模式（AArch32）
-- 新增64位指令
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ARM64异常级别                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  EL3 (Exception Level 3)                                       │
+│  ───────────────────────                                       │
+│  Secure Monitor                                                 │
+│  - TrustZone安全状态切换                                        │
+│  - 最高特权级                                                   │
+│                                                                  │
+│  EL2 (Exception Level 2)                                       │
+│  ───────────────────────                                       │
+│  Hypervisor                                                     │
+│  - 虚拟化支持                                                   │
+│  - 虚拟机管理                                                   │
+│                                                                  │
+│  EL1 (Exception Level 1)                                       │
+│  ───────────────────────                                       │
+│  OS Kernel                                                      │
+│  - 操作系统内核                                                 │
+│  - 特权模式                                                     │
+│                                                                  │
+│  EL0 (Exception Level 0)                                        │
+│  ───────────────────────                                       │
+│  Application                                                    │
+│  - 用户应用程序                                                 │
+│  - 非特权模式                                                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-#### 通用寄存器（X0-X30, SP, PC）
+### 4.2 寄存器
 
-| 寄存器 | 别名 | 用途 |
-|--------|------|------|
-| X0-X7 | - | 参数传递 |
-| X0 | - | 返回值 |
-| X29 | FP | 帧指针 |
-| X30 | LR | 链接寄存器 |
-| SP | - | 堆栈指针 |
-| PC | - | 程序计数器 |
+```c
+// 通用寄存器 X0-X30 (64位) / W0-W30 (32位)
+//
+// X0-X7: 函数参数和返回值
+// X0:   返回值
+// X29:  帧指针(FP)
+// X30:  链接寄存器(LR)
+// SP:   堆栈指针
+// PC:   程序计数器
 
-#### 异常级别（EL0-EL3）
-
-| 级别 | 名称 | 说明 |
-|------|------|------|
-| EL0 | 应用层 | 用户程序 |
-| EL1 | 内核层 | 操作系统 |
-| EL2 | 虚拟机 | 虚拟化 |
-| EL3 | 安全层 | 安全监控 |
-
-#### 运行状态
-- AArch64：64位
-- AArch32：32位（兼容）
-
-### 4.2 内存管理
-
-#### 页表结构（4级/5级页表）
-
-**4级页表**：
-- PGD（Page Global Directory）
-- PUD（Page Upper Directory）
-- PMD（Page Middle Directory）
-- PTE（Page Table Entry）
-
-**页大小**：
-- 4KB（默认）
-- 2MB（段页）
-- 1GB（大页）
-
-#### TTBR0/TTBR1
-- TTBR0：用户空间
-- TTBR1：内核空间
-
-#### 转换后备缓冲区（TLB）
-- 缓存虚拟地址映射
-- ASID区分进程
-
-#### ASID（地址空间ID）
-- 进程标识
-- 避免TLB刷洗
+// 特殊寄存器
+// SPSR (Saved Program Status Register)
+// ELR (Exception Link Register)
+// SP_EL0 / SP_EL1 / SP_EL2 / SP_EL3
+```
 
 ### 4.3 系统调用
 
-#### SVC指令
-```asm
-svc #0  // 触发系统调用
+```c
+// ARM64系统调用
+// #define __NR_read 63
+
+// 用户态发起系统调用
+mov x8, #63     // 系统调用号 -> X8
+mov x0, fd      // 参数1
+mov x1, buf     // 参数2
+mov x2, count   // 参数3
+svc #0          // 触发系统调用
+
+// 内核端系统调用处理
+asmlinkage long sys_read(unsigned int fd,
+                        char __user *buf,
+                        size_t count);
 ```
 
-#### 系统调用号
-| 号 | 系统调用 |
-|----|----------|
-| 0 | read |
-| 1 | write |
-| 2 | open |
-| 3 | close |
-| ... | ... |
+### 4.4 页表
 
-#### 参数传递（X0-X7）
-- X0-X5：参数
-- X0：返回值
-- X8：系统调用号
+```c
+// ARM64页表配置
+// 4级页表: PGD -> PUD -> PMD -> PTE
 
-### 4.4 中断与异常
+// VA布局 (48位VA)
+//
+// [63:48] [47:39] [38:30] [29:21] [20:12] [11:0]
+//  VA[47:39] -> PGD索引
+//  VA[38:30] -> PUD索引
+//  VA[29:21] -> PMD索引
+//  VA[20:12] -> PTE索引
+//  VA[11:0 ] -> 页内偏移
 
-#### 异常向量表
-- 向量基址寄存器
-- 各类异常入口
+// TTBR0 (用户空间)
+// TTBR1 (内核空间)
+```
 
-#### 中断控制器（GIC）
+### 4.5 中断控制器(GIC)
 
-| 版本 | 特点 |
-|------|------|
-| GICv2 | 最多8核 |
-| GICv3 | 支持更多核，ITS |
-| GICv4 | 虚拟化支持 |
+```c
+// GICv2基本编程
+// GICDistributor
+#define GICD_CTLR      (GIC_DIST_BASE + 0x000)
+#define GICD_ISENABLER (GIC_DIST_BASE + 0x100)
+#define GICD_IPRIORITY (GIC_DIST_BASE + 0x400)
+#define GICD_ITARGETSR (GIC_DIST_BASE + 0x800)
 
-#### FIQ vs IRQ
-- FIQ：快速中断
-- IRQ：普通中断
-- ARM64中差异减小
+// 使能中断
+void enable_irq(unsigned int irq) {
+    writel(1 << (irq % 32), GICD_ISENABLER(irq / 32));
+}
 
-### 4.5 缓存与内存
+// GICCPUInterface
+#define GICC_CTLR      (GIC_CPU_BASE + 0x00)
+#define GICC_PMR       (GIC_CPU_BASE + 0x04)
 
-#### 缓存架构
-- L1：指令/数据分离
-- L2：统一缓存
-- L3：可选
+// 设置中断优先级掩码
+writel(0xF0, GICC_PMR);  // 允许所有优先级
 
-#### DSB/ISB/DMB指令
-
-| 指令 | 功能 |
-|------|------|
-| DSB | 数据同步屏障 |
-| ISB | 指令同步屏障 |
-| DMB | 数据内存屏障 |
-
-#### 内存属性
-
-| 类型 | 特点 |
-|------|------|
-| Normal | 可缓存 |
-| Device | 不可缓存 |
-| Strongly Ordered | 顺序访问 |
-
-### 4.6 电源管理
-
-#### PSCI协议
-- Power State Coordination Interface
-- CPUidle
-- CPUhotplug
-- 系统关机/重启
-
-#### CPU idle驱动
-- cpuidle框架
-- 状态管理
-
-#### 系统挂起与恢复
-- suspend to RAM
-- hibernation
+// 使能CPU接口
+writel(1, GICC_CTLR);
+```
 
 ---
 
 ## 5. 调试技巧
 
-### 5.1 printk与日志级别
+### 5.1 printk日志
 
 ```c
-printk(KERN_DEBUG "Debug message\n");
-printk(KERN_INFO "Info message\n");
-printk(KERN_WARNING "Warning\n");
-printk(KERN_ERR "Error\n");
-printk(KERN_CRIT "Critical\n");
+// 日志级别
+printk(KERN_EMERG "Emergency\n");    // 0
+printk(KERN_ALERT "Alert\n");          // 1
+printk(KERN_CRIT "Critical\n");        // 2
+printk(KERN_ERR "Error\n");           // 3
+printk(KERN_WARNING "Warning\n");     // 4
+printk(KERN_NOTICE "Notice\n");       // 5
+printk(KERN_INFO "Info\n");           // 6
+printk(KERN_DEBUG "Debug\n");         // 7
+
+// 动态调试
+#define DEBUG 1
+#ifdef DEBUG
+#define pr_debug(fmt, ...) printk(KERN_DEBUG fmt, ##__VA_ARGS__)
+#else
+#define pr_debug(fmt, ...) no_printk(KERN_DEBUG fmt, ##__VA_ARGS__)
+#endif
 ```
 
-**级别定义**：
-| 级别 | 值 | 字符串 |
-|------|-----|--------|
-| KERN_EMERG | 0 | "" |
-| KERN_ALERT | 1 | "" |
-| KERN_CRIT | 2 | "" |
-| KERN_ERR | 3 | "" |
-| KERN_WARNING | 4 | "" |
-| KERN_NOTICE | 5 | "" |
-| KERN_INFO | 6 | "" |
-| KERN_DEBUG | 7 | "" |
-
-### 5.2 dmesg使用
-
-```bash
-dmesg                           # 查看所有消息
-dmesg -C                        # 清空
-dmesg -c                        # 查看后清空
-dmesg -T                        # 时间戳
-dmesg -l err                   # 过滤级别
-dmesg | grep "keyword"         # 过滤关键字
-```
-
-### 5.3 ftrace函数追踪
+### 5.2 ftrace
 
 ```bash
 # 启用function追踪
@@ -939,263 +907,156 @@ echo function > /sys/kernel/debug/tracing/current_tracer
 # 设置过滤器
 echo "schedule" > /sys/kernel/debug/tracing/set_ftrace_filter
 
+# function_graph
+echo function_graph > /sys/kernel/debug/tracing/current_tracer
+
 # 启用
 echo 1 > /sys/kernel/debug/tracing/tracing_on
 
 # 查看
 cat /sys/kernel/debug/tracing/trace
 
-# function_graph
-echo function_graph > /sys/kernel/debug/tracing/current_tracer
-
-# 关闭
+# 停止
+echo 0 > /sys/kernel/debug/tracing/tracing_on
 echo nop > /sys/kernel/debug/tracing/current_tracer
 ```
 
-### 5.4 性能分析
-
-#### perf工具使用
+### 5.3 perf
 
 ```bash
-# 采样CPU
-perf record -g ./program
+# CPU周期采样
+perf record -g -a ./program
 perf report
 
-# 指定事件
-perf stat -e cycles,instructions ./program
-
-# 热点分析
+# 热点函数
 perf top -p $(pidof process)
 
-# 函数分析
-perf probe --add schedule
-perf record -e probe:schedule -a -- sleep 10
+# 系统调用追踪
+perf record -e syscalls:sys_enter_read -a
 perf report
+
+# 调度分析
+perf sched record -- ./program
+perf sched timehist
 ```
 
-#### CPU热点分析
-- 定位热点函数
-- 分析调用链
+### 5.4 crash分析
 
-#### 锁竞争分析
 ```bash
-perf lock record ./program
-perf lock report
-```
+# 分析vmcore
+crash vmlinux vmcore
 
-#### 内存分配分析
-```bash
-perf mem record ./program
-perf mem report
-```
-
-### 5.5 kgdb内核调试
-
-**配置**：
-```
-# 内核配置
-CONFIG_KGDB=y
-CONFIG_KGDB_SERIAL_CONSOLE=y
-```
-
-**连接**：
-```bash
-# 目标机
-echo g > /proc/sysrq-trigger
-
-# 主机
-arm-none-eabi-gdb vmlinux
-(gdb) target remote /dev/ttyUSB0
-```
-
-### 5.6 crash/akdump分析
-
-**crash工具**：
-```bash
-crash vmcore vmmlinux
+# 查看进程
 crash> ps
+
+# 查看内核日志
 crash> log
+
+# 查看调用栈
 crash> bt
-```
 
-### 5.7 高级调试工具
+# 查看内存
+crash> kmem -i
 
-#### BCC/eBPF动态追踪
-
-```python
-# execsnoop.py示例
-from bcc import BPF
-
-bpf_text = """
-TRACEPOINT:syscalls:sys_enter_execve {
-    @comm = comm;
-}
-"""
-```
-
-**常用工具**：
-- execsnoop：追踪exec调用
-- opensnoop：追踪open
-- funclatency：函数延迟
-- offcputime：off-CPU时间
-
-#### SystemTap
-```stap
-probe kernel.function("schedule") {
-    printf("%s\n", execname());
-}
-```
-
-#### valgrind内存分析
-
-```bash
-valgrind --leak-check=full ./program
-```
-
-#### strace/ltrace系统调用追踪
-
-```bash
-strace -tt -T ./program
-strace -e openat ./program
-ltrace -f ./program
-```
-
-### 5.8 /proc文件系统
-
-| 文件 | 说明 |
-|------|------|
-| /proc/cpuinfo | CPU信息 |
-| /proc/meminfo | 内存信息 |
-| /proc/interrupts | 中断统计 |
-| /proc/softirqs | 软中断统计 |
-| /proc/vmstat | 虚拟内存统计 |
-| /proc/[pid]/status | 进程状态 |
-| /proc/[pid]/maps | 内存映射 |
-
-### 5.9 /sys文件系统
-
-| 路径 | 说明 |
-|------|------|
-| /sys/class | 设备类 |
-| /sys/device | 设备 |
-| /sys/bus | 总线 |
-| /sys/module | 内核模块 |
-| /sys/kernel | 内核参数 |
-
-### 5.10 内存调试
-
-```bash
-# slabinfo
-slabtop
-
-# meminfo分析
-cat /proc/meminfo
-
-# 内存分配跟踪
-echo 1 > /proc/sys/vm/drop_caches
+# 查看任务结构
+crash> task 0xffff9000xxxxx
 ```
 
 ---
 
 ## 6. 性能优化
 
-### 6.1 CPU性能优化
-
-#### 热点函数分析
-- perf top
-- flame graph
-
-#### 编译器优化选项
-| 选项 | 说明 |
-|------|------|
-| -O0 | 无优化 |
-| -O1 | 基本优化 |
-| -O2 | 更多优化 |
-| -O3 | 激进优化 |
-| -Os | 空间优先 |
-| -Ofast | 最快（可能违反标准） |
-
-#### 指令级优化
-- 循环展开
-- 避免分支
-- SIMD指令
-
-### 6.2 内存性能优化
-
-#### 内存泄漏检测
-- kmemleak
-- valgrind
-
-#### 缓存命中率优化
-- 数据对齐
-- 预取
-- 减少跨缓存行
-
-#### 大页内存使用
-- hugetlbfs
-- THP（透明大页）
-
-### 6.3 IO性能优化
-
-#### IO调度器选择
-- SSD：noop
-- NVMe：mq-deadline
-- 机械硬盘：deadline/cfq
-
-#### 文件系统选择
-- 日志文件系统
-- 顺序写入优化
-
-#### Direct IO vs Buffered IO
-- Direct IO：绕过缓存
-- Buffered IO：页缓存
-
-### 6.4 锁竞争优化
-
-#### 自旋锁 vs 互斥锁
-
-| 锁类型 | 适用场景 |
-|--------|----------|
-| spin_lock | 短临界区 |
-| mutex | 长临界区 |
-
-#### 无锁编程（RCU）
-
-**Read-Copy-Update**：
-- 读无锁
-- 写时复制
-- 延迟释放
+### 6.1 CPU优化
 
 ```c
+// 1. 避免分支预测失败
+// 错误
+if(likely(condition)) { } else { }
+
+// 正确
+if(unlikely(error)) {
+    // 处理错误
+}
+
+// 2. 缓存对齐
+struct my_struct {
+    u64 field1;    // 8字节
+    u32 field2;   // 4字节
+} __attribute__((aligned(64)));  // 64字节对齐
+
+// 3. 预取
+prefetch(address);
+prefetchw(address);  // 预取用于写
+```
+
+### 6.2 内存优化
+
+```c
+// 1. DMA缓冲区对齐
+void *dma_buf;
+dma_buf = kmalloc(size + align, GFP_KERNEL | __GFP_ZERO);
+if(!IS_ALIGNED((unsigned long)dma_buf, alignment))
+    dma_buf = PTR_ALIGN(dma_buf, alignment);
+
+// 2. 减少内存复制
+// 使用零拷贝
+// io_uring, splice, vmsplice
+
+// 3. 大页内存
+ret = syscall(SYS_madvise, addr, length, MADV_HUGEPAGE);
+```
+
+### 6.3 锁优化
+
+```c
+// 1. 读写锁
+DEFINE_RWLOCK(my_rwlock);
+
+read_lock(&my_rwlock);
+// 读操作
+read_unlock(&my_rwlock);
+
+write_lock(&my_rwlock);
+// 写操作
+write_unlock(&my_rwlock);
+
+// 2. RCU (Read-Copy-Update)
 rcu_read_lock();
-/* 读操作 */
+// 只读操作
 rcu_read_unlock();
 
 synchronize_rcu();
-/* 写操作 */
+// 更新操作
 ```
-
-#### 减少临界区
-- 缩小锁范围
-- 读写锁
-- 乐观锁
 
 ---
 
 ## 附录
 
-### 常见面试问题
+### 常见面试问题汇总
 
 1. **Linux中断处理流程？**
+   - 硬件中断 → GIC → 顶半部 → 软中断/Tasklet → Workqueue
+
 2. **进程调度算法？**
+   - CFS完全公平调度，vruntime红黑树管理
+
 3. **内存管理机制？**
+   - 页表、Buddy System、Slab分配器
+
 4. **VFS数据结构？**
+   - super_block、inode、dentry、file
+
 5. **设备驱动模型？**
-6. **系统调用过程？**
-7. **ARM64页表结构？**
-8. **如何分析性能问题？**
+   - platform、i2c、spi、net、char驱动
+
+6. **ARM64异常级别？**
+   - EL0用户、EL1内核、EL2虚拟化、EL3安全
+
+7. **如何分析性能问题？**
+   - perf、ftrace、crash工具使用
 
 ---
 
-*文档版本：v1.0*
+*文档版本：v2.0 详细版*
 *更新时间：2026-03-05*
