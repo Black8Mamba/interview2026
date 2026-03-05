@@ -1,6 +1,7 @@
-# 嵌入式MCU面试知识点
+# 嵌入式MCU面试知识点（详细版）
 
 > 适用于高级嵌入式工程师岗位（智能硬件大厂）
+> 本文档针对MCU/MCU+RTOS方向，涵盖Cortex-M/R架构、外设、调试、业务及传感器等核心技术点
 
 ---
 
@@ -21,859 +22,1935 @@
 
 ## 1. ARM Cortex系列概述
 
-### 1.1 三大系列定位
+### 1.1 三大系列定位与市场背景
 
-ARM Cortex系列处理器分为三个主要系列，分别针对不同的应用场景：
+ARM（Advanced RISC Machines）公司在2004年推出Cortex系列处理器，取代了之前的ARM9/10/11系列。Cortex系列分为三个明确的产品线，分别针对不同的市场细分：
 
-| 系列 | 定位 | 特点 | 典型应用 |
-|------|------|------|----------|
-| **Cortex-M** | 微控制器 | 低功耗、低成本、实时性好 | MCU、IoT设备、智能硬件 |
-| **Cortex-R** | 实时处理器 | 高可靠性、实时性、容错 | 汽车电子、工业控制、医疗设备 |
-| **Cortex-A** | 应用处理器 | 高性能、丰富功能、Linux支持 | 手机、平板、智能终端 |
+#### Cortex-M系列：微控制器市场
 
-### 1.2 各系列优缺点对比
+Cortex-M系列是ARM历史上最成功的处理器系列之一，专为成本敏感型MCU应用设计。从2004年推出Cortex-M3以来，该系列已成为全球MCU市场的主流架构。
 
-#### Cortex-M系列
-- **优点**：
-  - 极低的功耗
-  - 易于使用，开发工具成熟
-  - 中断响应快
-  - 成本低
-  -  Thumb-2指令集（16/32位混合），代码密度高
-- **缺点**：
-  - 性能相对较弱
-  - 不支持MMU（除Cortex-M7可选）
-  - 不支持Linux
+**设计目标**：
+- 极低的功耗（μW级静态功耗）
+- 最小化的硅面积（<0.5mm² 核心面积）
+- 易于编程和调试（单线调试SWD）
+- 确定性的中断响应（无需缓存，零等待状态）
 
-#### Cortex-R系列
-- **优点**：
-  - 实时性强，中断延迟确定
-  - 高可靠性，支持ECC
-  - 支持MMU（部分型号）
-  - 适合安全关键应用
-- **缺点**：
-  - 成本较高
-  - 生态相对Cortex-M较少
-  - 不支持Linux（需要配合Cortex-A）
+**市场地位**：
+- STM32（NXP、TI、Microchip等）基于Cortex-M
+- 超过50%的32位MCU市场份额
+- IoT、可穿戴、智能家居的主力架构
 
-#### Cortex-A系列
-- **优点**：
-  - 性能强，支持Linux/Android
-  - 丰富的软件生态
-  - 支持MMU和虚拟化
-  - 强大的处理能力
-- **缺点**：
-  - 功耗较高
-  - 实时性较差
-  - 开发复杂度高
-  - 成本高
+#### Cortex-R系列：实时嵌入式市场
 
-### 1.3 应用场景分析
+Cortex-R系列面向对可靠性和实时性有严苛要求的嵌入式应用，是工业和汽车安全关键系统的主流选择。
 
-**Cortex-M应用场景**：
-- 简单传感器节点
-- 智能家居设备
--  wearables（手环等）
-- 汽车ECU（辅助ECU）
-- 工业PLC
+**设计目标**：
+- 确定性的中断响应（亚微秒级）
+- 高可靠性（内存ECC、错误检测）
+- 实时操作系统支持
+- 功能安全认证
 
-**Cortex-R应用场景**：
-- 汽车安全系统（安全气囊、刹车）
-- 工业实时控制
-- 航空电子设备
-- 医疗设备（起搏器等）
-- 存储控制器
+**应用领域**：
+- 汽车ECU（发动机控制、安全气囊、刹车系统）
+- 工业控制（PLC、运动控制器）
+- 医疗设备（起搏器、监护仪）
+- 存储控制（SSD控制器）
 
-**Cortex-A应用场景**：
+#### Cortex-A系列：应用处理器市场
+
+Cortex-A系列面向高性能计算应用，支持运行完整操作系统（Linux、Android）。
+
+**设计目标**：
+- 高性能（GHz级主频）
+- 丰富的指令集（A64/A32/T32）
+- 内存管理单元（MMU）支持虚拟内存
+- 硬件虚拟化支持
+
+**典型应用**：
 - 智能手机/平板
-- 智能车载系统
+- 智能车载系统（IVI）
 - 边缘计算网关
-- 多媒体设备
-- 复杂IoT网关
+- 智能摄像头
+
+### 1.2 各系列详细对比
+
+| 特性维度 | Cortex-M | Cortex-R | Cortex-A |
+|----------|----------|----------|----------|
+| **架构版本** | ARMv6-M/7-M/8-M | ARMv7-R/8-R | ARMv7-A/8-A/9-A |
+| **指令集** | Thumb-2 | Thumb-2 + ARM | A64/A32/T32 |
+| **流水线深度** | 3级 | 3-6级 | 8-15级 |
+| **主频范围** | <300MHz | <600MHz | >2GHz |
+| **MMU** | 可选(仅M7/M33) | 必须 | 必须 |
+| **缓存** | 可选(I/D-Cache) | 必须(L1+L2) | 必须(L1+L2+L3) |
+| **FPU** | 可选 | 可选 | 可选 |
+| **DSP指令** | M4/M7/M33支持 | 支持 | 支持 |
+| **TrustZone** | M33/M23支持 | 无 | 支持 |
+| **中断延迟** | <12周期 | <20周期 | 变化较大 |
+| **功耗** | μW-mW级 | mW级 | 数百mW-数W |
+| **典型制程** | 40nm+ | 40nm+ | 7nm-28nm |
+| **典型芯片** | STM32F4/L4/G4 | Ti C6678 | 高通/联发科/海思 |
+| **Linux支持** | 不支持 | 不直接支持 | 完全支持 |
+| **RTOS支持** | 完美支持 | 支持 | 支持 |
+| **安全认证** | IEC 61508 | ISO 26262/DO-178C | 多样化 |
+
+### 1.3 Cortex-M各型号深度对比
+
+| 型号 | 架构 | 流水线 | 特色功能 | 典型应用 |
+|------|------|--------|----------|----------|
+| **Cortex-M0** | ARMv6-M | 3级 | 最小面积 | 超低成本MCU |
+| **Cortex-M0+** | ARMv6-M | 3级 | 优化功耗 | IoT节点 |
+| **Cortex-M3** | ARMv7-M | 3级 | 高性能 | 通用MCU |
+| **Cortex-M4** | ARMv7E-M | 3级 | DSP+FPU | 电机控制 |
+| **Cortex-M7** | ARMv7E-M | 6级双发 | 最高性能+缓存 | 高级消费电子 |
+| **Cortex-M23** | ARMv8-M Baseline | 2级 | 轻量级安全 | 简单安全设备 |
+| **Cortex-M33** | ARMv8-M Mainline | 4级 | 完整安全+DSP+FPU | 安全IoT |
+| **Cortex-M55** | ARMv8.1-M | 8级 | Helium(DSP SIMD) | AI边缘MCU |
+
+### 1.4 Cortex-R各型号深度对比
+
+| 型号 | 架构 | 核数 | 特色功能 | 典型应用 |
+|------|------|------|----------|----------|
+| **Cortex-R4** | ARMv7-R | 单核 | 双标量流水线 | 工业/存储 |
+| **Cortex-R5** | ARMv7-R | 单核/双核 | 保守设计 | 汽车ADAS |
+| **Cortex-R7** | ARMv7-R | 双核/四核 | Out-of-order | 汽车/无线基带 |
+| **Cortex-R8** | ARMv7-R | 四核 | 增强L2 | 调制解调器 |
+| **Cortex-R52** | ARMv8-R | 多核 | 隔离技术 | 汽车安全 |
+
+### 1.5 异构系统架构
+
+现代嵌入式系统越来越多采用多核异构架构，充分发挥不同核心的优势：
+
+#### 典型架构模式
+
+**MCU + AP架构**：
+```
+┌─────────────┐     ┌─────────────┐
+│  Cortex-M  │     │  Cortex-A  │
+│  (实时)    │ ←→  │  (应用)    │
+└─────────────┘     └─────────────┘
+        │                   │
+        └────── 共享内存 ────┘
+               (RPMsg)
+```
+
+- Cortex-M负责实时控制、物理接口、传感器采集
+- Cortex-A负责复杂算法、显示、网络、用户交互
+- 通过共享内存+消息队列通信
+
+**典型芯片**：
+- NXP i.MX RT系列（Cortex-M7）
+- ST STM32MP系列（Cortex-A7 + Cortex-M4）
+- 瑞萨R-Car系列
 
 ---
 
 ## 2. Cortex-M架构知识
 
-### 2.1 Cortex-M3/M4/M7/M33核心架构
+### 2.1 Cortex-M3深度解析
 
-#### Cortex-M3
-- **架构版本**：ARMv7-M
-- **流水线**：3级流水线（取指-译码-执行）
-- **指令集**：Thumb-2（16/32位）
-- **特性**：
-  - 硬件除法器
-  - 位操作指令（BB、BFC、BFI、CLZ、RBIT等）
-  - 条件执行（IT块）
-  - 非对齐访问支持
-- **典型芯片**：STM32F1、LPC17xx
+Cortex-M3是ARM公司2005年推出的首款Cortex-M处理器，至今仍是嵌入式MCU的主流选择之一。
 
-#### Cortex-M4
-- **架构版本**：ARMv7E-M（在M3基础上增加）
-- **流水线**：3级流水线
-- **新增特性**：
-  - DSP指令（单周期乘加、SIMD）
-  - 单精度浮点单元（FPU）
-  - 饱和算术指令
-- **典型芯片**：STM32F4、NXP MK64
+#### 核心架构
 
-#### Cortex-M7
-- **架构版本**：ARMv7E-M
-- **流水线**：6级流水线（双发射）
-- **新增特性**：
-  - 可选L1缓存（I-Cache/D-Cache）
-  - 可选MPU
-  - 可选ETM跟踪
-  - 更高的主频（200MHz+）
-  - TCM接口（Tightly Coupled Memory）
-- **典型芯片**：STM32F7、IMXRT1050
+**流水线**：
+- 3级流水线：取指(Fetch) → 译码(Decode) → 执行(Execute)
+- 分支预测：动态分支预测，减少流水线停顿
+- 零等待状态：Flash accelerator配合
 
-#### Cortex-M33
-- **架构版本**：ARMv8-M（32位）
-- **流水线**：4级流水线
-- **新增特性**：
-  - 安全扩展（TrustZone）
-  - 协处理器接口
-  - 改进的DSP指令
-  - 可选FPU
-- **典型芯片**：STM32L5、NXP LPC55S
+**指令集**：
+- Thumb-2：16/32位混合指令集
+- 性能达到纯ARM指令的95%
+- 代码密度比纯32位指令高26%
 
-### 2.2 指令集（Thumb/Thumb-2）
-
-#### Thumb指令集
-- 16位指令格式
-- 代码密度高
-- 性能较低
-- 只能访问部分寄存器
-
-#### Thumb-2指令集
-- 16位和32位混合指令
-- 兼具代码密度和性能
-- 首次出现在Cortex-M3
-- 支持所有ARM指令功能
-
-**常见Thumb-2指令分类**：
-- 数据处理：ADD、SUB、MOV、CMP
-- 逻辑运算：AND、ORR、EOR、BIC
-- 移位操作：LSL、LSR、ASR、ROR
-- 加载存储：LDR、STR、LDM、STM
-- 分支：B、BL、BX、BLX
-- 特殊：SEV、WFI、WFE、ISB、DSB、DMB
-
-### 2.3 寄存器组
-
-#### 通用寄存器（R0-R12）
-- R0-R7：低寄存器，所有指令可访问
-- R8-R12：高寄存器，部分指令限制
-
-#### 特殊寄存器
-- **R13 (SP)**：堆栈指针
-  - MSP：主堆栈指针（复位后默认）
-  - PSP：进程堆栈指针（用于线程模式）
-- **R14 (LR)**：链接寄存器，保存函数返回地址
-- **R15 (PC)**：程序计数器
-- **PSR**：程序状态寄存器
-  - APSR：应用PSR（flags）
-  - IPSR：中断PSR（异常编号）
-  - EPSR：执行PSR（Thumb状态）
-- **PRIMASK**：中断屏蔽寄存器
-- **CONTROL**：控制寄存器
-  - bit[0]：特权级（0=特权，1=用户）
-  - bit[1]：堆栈选择（0=MSP，1=PSP）
-
-### 2.4 异常处理模型
-
-#### 异常类型
-| 异常编号 | 类型 | 优先级 |
-|----------|------|--------|
-| 0 | - | - |
-| 1 | Reset | -3 |
-| 2 | NMI | -2 |
-| 3 | Hard Fault | -1 |
-| 4 | Memory Management Fault | 可配置 |
-| 5 | Bus Fault | 可配置 |
-| 6 | Usage Fault | 可配置 |
-| 11-15 | External Interrupts | 可配置 |
-
-#### 向量表
-- 位于Flash起始地址（可重定位）
-- 第一个字是主堆栈指针(MSP)初值
-- 后续是各异常处理函数地址
-- 第0个向量是栈顶地址，第1个是Reset_Handler
-
-#### 优先级
-- 编号越小优先级越高
-- 可通过NVIC配置
-- 优先级分组决定抢占能力
-
-### 2.5 NVIC中断控制器
-
-#### 功能特性
-- 支持最多256个中断（具体芯片实现）
-- 8位优先级字段（实际实现可能更少）
-- 支持向量式中断
-- 支持中断嵌套
-- 支持优先级分组
-
-#### 编程接口
-```c
-// 使能中断
-NVIC_EnableIRQ(IRQn_Type irq);
-
-// 设置优先级
-NVIC_SetPriority(IRQn_Type irq, uint32_t priority);
-
-// 设置优先级分组
-NVIC_SetPriorityGrouping(uint32_t priority_group);
-
-// 进入临界区
-__disable_irq();  // 关全局中断
-__enable_irq();  // 开全局中断
+**重要特性**：
+```
+┌─────────────────────────────────────────────────────┐
+│                   Cortex-M3                         │
+├─────────────────────────────────────────────────────┤
+│  ┌─────────────┐   ┌─────────────┐                  │
+│  │ 3级流水线   │   │  乘法器     │ 32位×32位 = 32位 │
+│  └─────────────┘   └─────────────┘  1-12周期      │
+│  ┌─────────────┐   ┌─────────────┐                  │
+│  │硬件除法器   │   │  Bit-banding │ 内存位操作     │
+│  └─────────────┘   └─────────────┘                  │
+│  ┌─────────────┐   ┌─────────────┐                  │
+│  │ 嵌套向量中断 │   │ 睡眼模式    │                 │
+│  └─────────────┘   └─────────────┘                  │
+└─────────────────────────────────────────────────────┘
 ```
 
-### 2.6 内存保护单元（MPU）
+#### 寄存器组详细说明
 
-#### 功能
-- 划分内存区域
-- 设置区域属性（权限、缓存策略）
-- 防止非法内存访问
-- 支持8/16个区域
+**通用寄存器**：
+- R0-R7：低寄存器，所有Thumb指令可访问
+- R8-R12：高寄存器，某些Thumb指令限制
 
-#### 区域属性
-- AP（访问权限）：特权/用户，读/写
-- XN：执行禁止
-- S：可共享
-- TEX：类型扩展
-- C/B：缓存/缓冲属性
+**特殊寄存器**：
 
-### 2.7 DSP指令与FPU
+| 寄存器 | 功能 | 特别说明 |
+|--------|------|----------|
+| **R13 (SP)** | 堆栈指针 | MSP（主堆栈）/PSP（进程堆栈） |
+| **R14 (LR)** | 链接寄存器 | 函数返回地址 |
+| **R15 (PC)** | 程序计数器 | 指向下一条指令 |
+| **xPSR** | 程序状态 | 包含APSR/IPSR/EPSR |
 
-#### DSP指令（Cortex-M4/M7）
-- **单周期乘加**：`MLA, MLS, SMMLA, SMMLS`
-- **SIMD操作**：`ADD8, SUB16, SADD16`
-- **饱和指令**：`QADD, QSUB, USAT, SSAT`
-- **除法**：SDIV/UDIV（12-20周期）
+**CONTROL寄存器**（重要）：
+```
+bit[1] 堆栈选择   0=MSP, 1=PSP
+bit[0] 特权级    0=特权级(Supervisor), 1=用户级(User)
+```
 
-#### FPU（Cortex-M4/M7/M33）
-- 单精度浮点（32位）
-- 寄存器S0-S31（可映射到D0-D15）
-- 协处理器CP10/CP11
-- Lazy stacking支持
+#### 异常处理模型详解
 
-### 2.8 功耗模式
+**向量表结构**（前16个异常）：
+```
+地址     | 异常号  |  说明
+----------|---------|------------------
+0x0000   | -       | MSP初始值
+0x0004   | 1       | Reset
+0x0008   | 2       | NMI
+0x000C   | 3       | HardFault
+0x0010   | 4       | MemManage
+0x0014   | 5       | BusFault
+0x0018   | 6       | UsageFault
+0x001C   | 7-10    | 保留
+0x0034   | 11      | SVCall
+0x0038   | 12      | Debug Monitor
+0x003C   | 13      | 保留
+0x0040   | 14      | PendSV
+0x0044   | 15      | SysTick
+0x0048+  | 16+     | 外部中断IRQ0-IRQn
+```
 
-| 模式 | 进入指令 | 唤醒源 | SRAM | 时钟 |
-|------|----------|--------|------|------|
-| Sleep | WFI/WFE | 任意中断 | 保持 | 可选 |
-| Deep Sleep | LPDS | 特定中断 | 保持 | 关闭 |
-| Stop | 深度停止 | 特定中断 | 保持 | 全关闭 |
-| Standby | 深度停止+PU | 特定引脚/RTC | 丢失 | 全关闭 |
-| VBAT | - | - | 部分保持 | RTC可选 |
+**异常优先级**：
+- 可配置优先级：8位（实际实现可能更少，如4-8位）
+- 编号越小优先级越高
+- 优先级分组：抢占能力和分组子优先级
+
+**异常响应流程**：
+```
+1. 异常发生
+   ↓
+2. CPU将当前状态压栈（xPSR, PC, LR, R12, R3-R0）
+   ↓
+3. 读取向量表，获取处理函数地址
+   ↓
+4. 跳转到处理函数
+   ↓
+5. 执行处理
+   ↓
+6. EXC_RETURN返回
+   ↓
+7. 栈中状态恢复
+   ↓
+8. 继续执行
+```
+
+**关键点**：
+- 自动保存/恢复上下文
+- 零周期中断延迟（中断响应在周期级别）
+- 尾链优化（Tail-chaining）：连续中断无需恢复
+
+#### NVIC中断控制器详解
+
+**功能特性**：
+- 最多支持256个外部中断（具体芯片实现）
+- 1-256个优先级（实际实现如8/16级）
+- 向量式中断
+- 支持中断嵌套
+- 支持中断优先级分组
+
+**编程接口**：
+
+```c
+// 使能指定中断
+void NVIC_EnableIRQ(IRQn_Type IRQn);
+
+// 禁用指定中断
+void NVIC_DisableIRQ(IRQn_Type IRQn);
+
+// 设置中断挂起
+void NVIC_SetPendingIRQ(IRQn_Type IRQn);
+
+// 清除中断挂起
+void NVIC_ClearPendingIRQ(IRQn_Type IRQn);
+
+// 设置中断优先级 (0=最高)
+void NVIC_SetPriority(IRQn_Type IRQn, uint32_t priority);
+
+// 设置优先级分组
+// 参数: 0-7
+// 含义: 分成(preempt-priority-group) + (sub-priority-group)
+void NVIC_SetPriorityGrouping(uint32_t PriorityGroup);
+
+// 进入/退出临界区
+__disable_irq();  // 关闭全局中断
+__enable_irq();   // 打开全局中断
+```
+
+**优先级分组示例**：
+```
+PriorityGroup = 0b010 (2)
+[7:1] 抢占优先级 [0] 子优先级
+
+PriorityGroup = 0b101 (5)
+[7:3] 抢占优先级 [2:0] 子优先级
+```
+
+### 2.2 Cortex-M4深度解析
+
+Cortex-M4在M3基础上增加了DSP和FPU，是电机控制、数字信号处理的主流选择。
+
+#### 与M3的对比
+
+| 特性 | Cortex-M3 | Cortex-M4 |
+|------|-----------|-----------|
+| 架构 | ARMv7-M | ARMv7E-M |
+| DSP指令 | 无 | 有 |
+| FPU | 无 | 单精度 |
+| 乘法 | 32×32=32 | 32×32+64 |
+| 饱和指令 | 无 | 有 |
+| SIMD | 无 | 有 |
+
+#### DSP指令集详解
+
+**单周期乘加指令**：
+```c
+// 32位乘法
+__asm uint32_t mul32(uint32_t a, uint32_t b) {
+    MUL r0, r0, r1
+    BX lr
+}
+
+// 32位乘加 (结果64位)
+// SMMLA - 有符号乘加，结果32位（饱和）
+// SMLAD - 有符号乘加，双16位
+```
+
+**SIMD指令**：
+```c
+// 16位并行加法
+// SADD16 R0, R1, R2  ->  R0[31:16]=R1[31:16]+R2[31:16]
+//                      R0[15:0]=R1[15:0]+R2[15:0]
+
+// 8位并行操作
+// ADD8 R0, R1, R2     // 四个8位同时加
+```
+
+**饱和指令**：
+```c
+// 有符号饱和
+__asm int32_t sat_q15(int32_t val) {
+    SSAT r0, #16, r0  // 饱和到[-32768, 32767]
+    BX lr
+}
+
+// 无符号饱和
+__asm uint32_t sat_u16(uint32_t val) {
+    USAT r0, #16, r0  // 饱和到[0, 65535]
+    BX lr
+}
+```
+
+#### FPU浮点单元详解
+
+**寄存器**：
+- S0-S31：32位单精度寄存器
+- D0-D31：64位双精度（映射S0-S31）
+- FPSCR：浮点状态控制寄存器
+
+**使用示例**：
+```c
+// 开启FPU
+void EnableFPU(void) {
+    __set_FPSCR(__get_FPSCR() & ~0x00060000);  // 清零Mode位
+    __ASM volatile("isb");
+    __ASM volatile("dsb");
+}
+
+// 配置SCB
+SCB->CPACR |= ((3UL << 10*2) | (3UL << 11*2));
+```
+
+**Lazy Stacking**：
+- 中断发生时，FPU寄存器延迟保存
+- 减少中断延迟
+- 只有使用FPU的任务才保存上下文
+
+### 2.3 Cortex-M7深度解析
+
+Cortex-M7是Cortex-M系列的旗舰产品，提供最高性能。
+
+#### 架构特点
+
+**6级双发射流水线**：
+```
+取指1 → 取指2 → 译码 → 执行1 → 执行2 → 写回
+    ↓                                    ↓
+    └────────── 分支预测 ────────────────┘
+```
+
+**关键特性**：
+- 双发射：同时执行两条指令
+- 指令/数据缓存：可选16KB-64KB
+- TCM接口：紧耦合内存，零等待
+- ETM跟踪：完整指令跟踪
+
+#### 缓存配置
+
+**典型配置**：
+```
+I-Cache: 4-64KB (可配置)
+D-Cache: 4-64KB (可配置)
+TCM:    0-512KB (代码/数据分离)
+```
+
+**缓存策略**：
+```c
+// 使能缓存
+void EnableICache(void) {
+    SCB_EnableICache();
+}
+
+void EnableDCache(void) {
+    SCB_EnableDCache();
+}
+
+// 禁用缓存
+void DisableDCache(void) {
+    SCB_DisableDCache();
+}
+```
+
+#### TCM接口
+
+**用途**：
+- 关键代码/数据加速
+- 实时要求高的场景
+- DMA缓冲区
+
+**配置**：
+```c
+// 在链接脚本中分配到TCM区域
+MEMORY
+{
+    ITCM (xrw)  : ORIGIN = 0x00000000, LENGTH = 128K
+    DTCM (xrw)  : 0x20000000, LENGTH = 128K
+}
+```
+
+### 2.4 Cortex-M33深度解析
+
+Cortex-M33是ARMv8-M架构的首批产品，支持TrustZone安全扩展。
+
+#### TrustZone安全架构
+
+**设计目标**：
+- 安全世界（Secure）和非安全世界（Non-secure）隔离
+- 保护关键资产（密钥、固件）
+- 最小化安全攻击面
+
+**状态切换**：
+```
+Secure World                    Non-Secure World
+    │                                  │
+    │←───── SG指令/安全调用 ──────────→│
+    │                                  │
+    │                                  │
+```
+
+**编程模型**：
+```c
+// 安全属性配置
+void TZ_SecureInit(void) {
+    // 配置SAU
+    SAU->CTRL = 0;
+    SAU->RNR  = 0;
+    SAU->RBAR = 0x20010000;  // 安全内存起始
+    SAU->RLAR = 0x2001FFFF;  // 安全内存结束
+    SAU->CTRL = 1;           // 使能SAU
+
+    // 配置非安全调用
+    SCB->NSACR |= (1 << 10); // 允许非安全访问FPU
+}
+```
+
+### 2.5 MPU内存保护单元
+
+#### 功能详解
+
+MPU允许配置8-16个内存区域，每个区域可设置：
+
+- 基地址
+- 大小（4KB-4GB）
+- 访问权限（特权/用户，读/写）
+- 执行权限（XN位）
+- 缓存属性
+
+#### 配置示例
+
+```c
+void MPU_Config(void) {
+    MPU_Region_InitTypeDef MPU_InitStruct = {0};
+
+    // 禁用MPU进行配置
+    HAL_MPU_Disable();
+
+    // 配置区域0: Flash (可执行, 可缓存)
+    MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+    MPU_InitStruct.Number = MPU_REGION_NUMBER0;
+    MPU_InitStruct.BaseAddress = 0x08000000;
+    MPU_InitStruct.Size = MPU_REGION_SIZE_512KB;
+    MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+    MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+    MPU_InitStruct.IsCacheable = MPU_ACCESS_CACHEABLE;
+    MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+    // 配置区域1: SRAM (禁止执行)
+    MPU_InitStruct.Number = MPU_REGION_NUMBER1;
+    MPU_InitStruct.BaseAddress = 0x20000000;
+    MPU_InitStruct.Size = MPU_REGION_SIZE_128KB;
+    MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+    MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+    // 配置区域2: 外设 (不可缓存, 设备内存)
+    MPU_InitStruct.Number = MPU_REGION_NUMBER2;
+    MPU_InitStruct.BaseAddress = 0x40000000;
+    MPU_InitStruct.Size = MPU_REGION_SIZE_1MB;
+    MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+    MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+    MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
+    MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL1;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+    // 使能MPU
+    HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+}
+```
+
+### 2.6 功耗模式深度解析
+
+Cortex-M支持多种功耗模式，从高功耗高性能到极低功耗深度睡眠。
+
+#### 功耗模式对比
+
+| 模式 | 唤醒源 | SRAM | 时钟 | 典型功耗 |
+|------|--------|------|------|----------|
+| **Run** | - | 保持 | 全开 | 100μW/MHz+ |
+| **Sleep** | 任意中断 | 保持 | 可选 | ~50% Run |
+| **Deep Sleep** | 特定中断 | 保持 | LSI | ~10% Run |
+| **Stop** | 特定中断 | 保持 | 全关 | ~10μA |
+| **Standby** | 特定引脚/RTC | 丢失 | RTC可选 | ~1μA |
+| **VBAT** | - | 部分 | RTC可选 | ~0.1μA |
+
+#### 低功耗设计要点
+
+**动态功耗**：
+- P = C × V² × f
+- 降低电压和频率可显著省电
+
+**静态功耗**：
+- 漏电流
+- 深度睡眠模式可降至nA级
+
+**实际设计考量**：
+```c
+// 进入深度睡眠
+void EnterDeepSleep(void) {
+    // 使能PWR时钟
+    __HAL_RCC_PWR_CLK_ENABLE();
+
+    // 配置深度睡眠
+    HAL_PWR_EnterDEEPSTOPMode(PWR_LOWPOWERMODE_STOP, PWR_STOPENTRY_WFI);
+}
+
+// 进入待机模式
+void EnterStandby(void) {
+    // 清除唤醒标志
+    __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
+
+    // 使能唤醒引脚
+    HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN1);
+
+    // 进入待机
+    HAL_PWR_EnterSTANDBYMode();
+}
+```
 
 ---
 
 ## 3. Cortex-R架构知识
 
-### 3.1 Cortex-R4/R5/R7/R8概述
+### 3.1 Cortex-R4/R5/R7详细解析
 
-| 型号 | 架构 | 特点 | 应用 |
-|------|------|------|------|
-| Cortex-R4 | ARMv7-R | 双标量流水线，MPU | 工业、汽车 |
-| Cortex-R5 | ARMv7-R | R4+保守+低延迟 | 汽车ADAS |
-| Cortex-R7 | ARMv7-R | 双核+MPU+ECC | 存储、汽车 |
-| Cortex-R8 | ARMv7-R | R7+更多特性 | 调制解调器 |
+#### Cortex-R4
 
-### 3.2 实时性特性
+**架构特点**：
+- 双标量流水线（1顺序+1发射）
+- 1.5 DMIPS/MHz
+- 可选MPU
+- 可选浮点单元
 
-#### 高可靠性设计
-- 确定性中断响应
-- 低中断延迟（可配置）
-- 零缺陷设计方法
-- 内存 ECC 保护
+**典型应用**：
+- 工业自动化
+- 汽车电子（非安全关键）
+- 存储控制器
 
-#### 容错机制
-- 双核锁步（DCLS）
-- 错误检测与纠正
-- 看门狗监控
+#### Cortex-R5
 
-### 3.3 内存架构
+**架构升级**：
+- 保守设计（更多检查）
+- 增强错误处理
+- 可选双核锁步
+- 更强MPU
 
-#### MPU
-- 5级/7级页表
-- 支持内存区域划分
-- 内存属性配置
+**典型应用**：
+- 汽车ADAS系统
+- 工业安全
+- 医疗设备
 
-#### ECC
-- 1位纠错/2位检测
-- 内存错误上报
-- 自动纠正
+#### Cortex-R7
 
-### 3.4 与Cortex-M的区别
+**架构升级**：
+- Out-of-order执行（有限）
+- 更高的主频
+- 强化的缓存
+- 典型2 DMIPS/MHz
 
-| 特性 | Cortex-M | Cortex-R |
+**典型应用**：
+- 汽车信息娱乐
+- 基带处理
+- 高性能工业控制
+
+### 3.2 实时性保证机制
+
+#### 中断响应
+
+Cortex-R提供确定性的中断响应：
+
+- **中断延迟**：<20周期（典型）
+- **最大中断屏蔽时间**：可预测
+- **中断优先级**：硬件保证
+
+#### 内存架构
+
+**ECC保护**：
+```
+┌────────────────────────────────────┐
+│           64位数据总线             │
+├────────────────────────────────────┤
+│  56位数据  │  8位ECC               │
+│  (8字节)  │  (单比特纠错)         │
+└────────────────────────────────────┘
+```
+
+**错误处理**：
+- 单比特错误：自动纠正
+- 双比特错误：中断报告
+
+### 3.3 双核锁步（DCLS）
+
+#### 工作原理
+
+```
+┌─────────┐     ┌─────────┐
+│ Core 0   │ ←──→│ Core 1  │
+│ (Master) │ 同步 │ (Lock) │
+└─────────┘     └─────────┘
+    ↓               ↓
+┌─────────────────────────────────┐
+│    比较器 (Compare)              │
+│  周期比较输出/指令               │
+└─────────────────────────────────┘
+```
+
+#### 应用场景
+
+- 安全气囊控制
+- 刹车系统（ABS）
+- 发动机控制
+
+### 3.4 Cortex-R vs Cortex-M对比
+
+| 维度 | Cortex-R | Cortex-M |
 |------|----------|----------|
-| 架构 | ARMv6-M/7-M/8-M | ARMv7-R/8-R |
-| MMU | 可选 | 必须 |
-| 缓存 | 可选 | 必须 |
-| 实时性 | 良好 | 优秀 |
-| ECC | 无 | 必须 |
-| 成本 | 低 | 高 |
-| Linux支持 | 不支持 | 不直接支持 |
-
-### 3.5 应用场景
-
-- **汽车电子**：安全气囊、刹车系统、发动机控制
-- **工业控制**：PLC、运动控制器
-- **医疗设备**：起搏器、监护仪
-- **存储系统**：SSD控制器
+| 目标应用 | 安全关键 | 通用MCU |
+| 实时性 | 硬实时 | 软实时 |
+| 成本 | 高 | 低 |
+| ECC | 必须 | 可选 |
+| 认证 | ISO 26262 | IEC 61508 |
+| 主频 | 最高600MHz | 最高300MHz |
+| 典型制程 | 28nm+ | 40nm+ |
 
 ---
 
-## 4. Cortex-A架构知识（与MCU相关）
+## 4. Cortex-A架构知识
 
-### 4.1 Cortex-A系列概述
+### 4.1 Cortex-A系列概览
 
-常见型号：
-- **Cortex-A5/A7**：低功耗应用处理器
-- **Cortex-A8**：单核高性能（已被淘汰）
-- **Cortex-A9**：多核（4核 max）
-- **Cortex-A15/A17**：高性能
-- **Cortex-A53/A57/A72**：64位（ARMv8）
-- **Cortex-A55/A75/A76/A77**：DynamIQ架构
-- **Cortex-A78/X1/X2**：最新高性能
+#### 主流型号
 
-### 4.2 与M/R系列的主要区别
+| 型号 | 架构 | 核数 | 特点 |
+|------|------|------|------|
+| Cortex-A53 | ARMv8-A | 1-4 | 64位，能效比 |
+| Cortex-A55 | ARMv8-A | 1-8 | DynamIQ，小核 |
+| Cortex-A72 | ARMv8-A | 1-4 | 高性能 |
+| Cortex-A73 | ARMv8-A | 1-4 | 持续性能 |
+| Cortex-A75 | ARMv8-A | 1-8 | 大核，DynamIQ |
+| Cortex-A76 | ARMv8.2-A | 1-8 | 笔记本性能 |
+| Cortex-A77 | ARMv8.2-A | 1-8 | 5G/AI优化 |
+| Cortex-A78 | ARMv8.2-A | 1-8 | 最新大核 |
+| Cortex-X1 | ARMv8.2-A | 1-8 | 最高性能 |
 
-| 特性 | Cortex-M | Cortex-A |
-|------|----------|----------|
-| 指令集 | Thumb-2 | A32/T32/A64 |
-| MMU | 可选 | 必须 |
-| Linux支持 | 不支持 | 支持 |
-| 虚拟化 | 无 | 支持 |
-| 流水线深度 | 3-6级 | 8-15级 |
-| 主频 | <300MHz | >2GHz |
+### 4.2 ARMv8-A架构基础
 
-### 4.3 在异构系统中的应用（MPU + A核）
+#### A64指令集
 
-#### 常见架构
-- **MCU + A核**：Cortex-M负责实时任务，Cortex-A负责复杂应用
-- **AMP异构**：多核不同架构（例：R核+M核+A核）
-- **协处理器**：DSP/神经网络加速器
+64位指令集，与32位不兼容：
 
-#### 核间通信
-- 共享内存 + 消息队列
-- Mailbox中断
-- RPMsg框架
+```asm
+// 64位加法
+ADD X0, X1, X2      // X0 = X1 + X2
+
+// 32位操作（零扩展）
+ADD W0, W1, W2      // W0 = W1 + W2
+
+// 64位立即数
+MOV X0, #0x12345678
+```
+
+#### 异常级别（ELn）
+
+```
+┌─────────────────────────────────────────┐
+│  EL0 (用户态)                           │
+│  用户程序运行                            │
+├─────────────────────────────────────────┤
+│  EL1 (内核态)                           │
+│  操作系统运行                            │
+├─────────────────────────────────────────┤
+│  EL2 (虚拟机管理)                       │
+│  Hypervisor                             │
+├─────────────────────────────────────────┤
+│  EL3 (安全监控)                         │
+│  Secure Monitor (TrustZone)            │
+└─────────────────────────────────────────┘
+```
+
+### 4.3 Cortex-A与Cortex-M协同
+
+#### 典型异构系统
+
+```
+┌──────────────────────────────────────────────────┐
+│              Cortex-A (Linux/Android)            │
+│  应用处理  网络  显示  复杂算法                   │
+├──────────────────────────────────────────────────┤
+│         共享内存 (RPMsg/Mailbox)                 │
+├──────────────────────────────────────────────────┤
+│              Cortex-M (RTOS/Bare-metal)          │
+│  实时控制  传感器  物理接口  电机驱动            │
+└──────────────────────────────────────────────────┘
+```
 
 ---
 
 ## 5. 常用外设
 
-### 5.1 低速外设
+### 5.1 GPIO详解
 
-#### GPIO（通用输入输出）
+#### 工作模式
 
-**功能模式**：
-- 输入：浮空、上拉、下拉、模拟
-- 输出：推挽、开漏
-- 复用：外设功能映射
-- 中断：上/下/边沿触发
+**输入模式**：
+- 浮空输入（Floating）
+- 上拉输入（Pull-up）
+- 下拉输入（Pull-down）
+- 模拟输入（Analog）
 
-**编程要点**：
+**输出模式**：
+- 推挽输出（Push-Pull）
+- 开漏输出（Open-Drain）
+
+**复用模式**：
+- 复用推挽
+- 复用开漏
+
+#### 配置流程
+
 ```c
-// GPIO配置结构体
-typedef struct {
-    uint32_t Pin;       // 引脚号
-    uint32_t Mode;      // 模式
-    uint32_t Pull;     // 上拉/下拉
-    uint32_t Speed;    // 速度
-    uint32_t Alternate;// 复用功能
-} GPIO_InitTypeDef;
+// HAL库配置示例
+void GPIO_Init(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    // 使能GPIO时钟
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+
+    // 配置PA5为推挽输出（LED）
+    GPIO_InitStruct.Pin = GPIO_PIN_5;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    // 配置PA0为浮空输入（按键）
+    GPIO_InitStruct.Pin = GPIO_PIN_0;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    // 配置PA4为ADC输入
+    GPIO_InitStruct.Pin = GPIO_PIN_4;
+    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+}
 ```
 
-**常见问题**：
-- 上拉/下拉电阻选择
-- 开漏输出需要上拉电阻
-- 复用功能配置冲突
+#### 中断配置
 
-#### UART（通用异步收发）
+```c
+// GPIO外部中断配置
+void EXTI_Init(void) {
+    // 使能SYSCFG时钟
+    __HAL_RCC_SYSCFG_CLK_ENABLE();
 
-**工作模式**：
-- 全双工异步通信
-- 8N1/9N1/7E1等格式
-- 硬件流控（RTS/CTS）
-- RS485支持（使能引脚控制）
-- DMA/中断模式
+    // 连接EXTI到PA0
+    HAL_SYSCFG_EXTILineConfig(EXTI_LINE_0, EXTI_PORT GPIOA);
 
-**常见应用**：
-- 调试串口
-- GPS模块通信
-- 模块AT指令
+    // 配置中断
+    EXTI_InitTypeDef EXTI_InitStruct = {0};
+    EXTI_InitStruct.Line = EXTI_LINE_0;
+    EXTI_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+    EXTI_InitStruct.Pull = GPIO_PULLUP;
+    HAL_EXTI_SetConfigLine(&EXTI_InitHandle, &EXTI_InitStruct);
 
-**常见问题**：
-- 波特率误差（需<2%）
-- 缓冲区溢出
-- DMA与中断优先级
+    // 设置优先级
+    HAL_NVIC_SetPriority(EXTI0_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+}
 
-#### SPI（串行外设接口）
+// 中断处理
+void EXTI0_IRQHandler(void) {
+    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
+}
 
-**工作模式**：
-- 全双工同步
-- 主/从模式
-- 时钟极性(CPOL)/相位(CPHA)
-- 数据位宽（4-16位）
-- 多从机模式（片选）
-- DMA支持
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    if(GPIO_Pin == GPIO_PIN_0) {
+        // 按键处理
+    }
+}
+```
 
-**常见应用**：
-- Flash存储
-- 显示驱动
-- 传感器通信
+### 5.2 UART详解
 
-**常见问题**：
-- MISO上拉导致从机无法工作
-- 时钟模式配置错误
-- 多从机片选冲突
+#### 通信格式
 
-#### I2C（集成电路总线）
+**数据位**：
+- 8N1：8数据位，无校验，1停止位
+- 9N1：9数据位，无校验，1停止位
+- 8E1：8数据位，偶校验，1停止位
 
-**工作模式**：
-- 主/从模式
-- 标准模式（100kHz）
-- 快速模式（400kHz）
-- 快速模式+（1MHz）
-- SMBus/PMBus支持
-- DMA支持
+**波特率精度**：
+- 误差<2%
+- 计算：`(Clock / (16 × Baudrate)) - 1`
 
-**常见应用**：
-- EEPROM
-- 传感器（温湿度、加速度）
-- RTC
+#### DMA+中断模式
 
-**常见问题**：
-- 从机地址冲突
-- 总线死锁（SCL被拉低）
-- 上拉电阻选择
+```c
+// UART DMA接收配置
+void UART_DMA_Init(void) {
+    UART_HandleTypeDef huart;
+    DMA_HandleTypeDef hdma_rx;
 
-#### TIM（定时器）
+    // 开启DMA时钟
+    __HAL_RCC_DMA1_CLK_ENABLE();
 
-**工作模式**：
-- 定时器基本功能
-- PWM输出
-- 输入捕获
-- 正交编码器
-- 脉冲计数
-- 触发ADC/DMA
+    // 配置DMA
+    hdma_rx.Instance = DMA1_Stream5;
+    hdma_rx.Init.Channel = DMA_CHANNEL_4;
+    hdma_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_rx.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_rx.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hdma_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    hdma_rx.Init.Mode = DMA_CIRCULAR;
+    hdma_rx.Init.Priority = DMA_PRIORITY_HIGH;
+    hdma_rx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+    HAL_DMA_Init(&hdma_rx);
 
-**PWM配置**：
-- 频率 = 时钟 / (PSC+1) / (ARR+1)
-- 占空比 = CCR / (ARR+1)
+    __HAL_LINKDMA(&huart, hdmarx, hdma_rx);
 
-**常见应用**：
-- LED调光
-- 电机控制（PWM + 正交编码）
-- 定时任务
+    // 开启空闲中断
+    __HAL_UART_ENABLE_IT(&huart, UART_IT_IDLE);
+}
 
-#### RTC（实时时钟）
+// DMA+空闲中断接收
+void UART_IdleRxHandler(UART_HandleTypeDef *huart) {
+    uint32_t tmp;
 
-**功能**：
-- 日历（年/月/日/时/分/秒）
-- 闹钟（可编程）
-- 周期性唤醒
-- 时间戳功能
-- 数字校准
+    if(__HAL_UART_GET_FLAG(huart, UART_FLAG_IDLE)) {
+        __HAL_UART_CLEAR_IDLEFLAG(huart);
 
-**电源**：
-- VBAT引脚（纽扣电池）
-- 低功耗保持
+        // 计算接收长度
+        tmp = huart->RxXferSize - __HAL_DMA_GET_COUNTER(huart->hdmarx);
 
-#### WDT/IWDT（看门狗）
+        // 处理数据
+        ProcessRxData(huart->pRxBuffPtr, tmp);
 
-**独立看门狗（IWDG）**：
-- 独立时钟源（LSI，40kHz）
-- 12位计数器
-- 不可配置超时（近似）
-- 只能复位
+        // 重新启动DMA
+        HAL_UART_Receive_DMA(huart, rx_buffer, BUFFER_SIZE);
+    }
+}
+```
 
-**窗口看门狗（WWDG）**：
-- APB1时钟
+#### RS485配置
+
+```c
+// RS485需要控制DE/RE引脚
+void RS485_Init(void) {
+    // 配置DE引脚为输出
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN_DE;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIO_PORT_DE, &GPIO_InitStruct);
+
+    // 默认接收模式
+    HAL_GPIO_WritePin(GPIO_PORT_DE, GPIO_PIN_DE, GPIO_PIN_RESET);
+}
+
+// 发送前设置为发送模式
+void RS485_Send(uint8_t *data, uint16_t len) {
+    // 切换到发送模式
+    HAL_GPIO_WritePin(GPIO_PORT_DE, GPIO_PIN_DE, GPIO_PIN_SET);
+
+    // 发送数据
+    HAL_UART_Transmit(&huart1, data, len, HAL_MAX_DELAY);
+
+    // 等待发送完成
+    while(__HAL_UART_GET_FLAG(&huart1, UART_FLAG_TXE) == RESET);
+
+    // 切换回接收模式
+    HAL_GPIO_WritePin(GPIO_PORT_DE, GPIO_PIN_DE, GPIO_PIN_RESET);
+}
+```
+
+### 5.3 SPI详解
+
+#### 四种模式
+
+| 模式 | CPOL | CPHA | 空闲SCK | 采样边沿 |
+|------|------|------|---------|----------|
+| 0 | 0 | 0 | 低电平 | 上升沿 |
+| 1 | 0 | 1 | 低电平 | 下降沿 |
+| 2 | 1 | 0 | 高电平 | 下降沿 |
+| 3 | 1 | 1 | 高电平 | 上升沿 |
+
+#### DMA传输
+
+```c
+// SPI DMA发送
+void SPI_DMA_Tx(uint8_t *tx_buf, uint16_t size) {
+    // 等待SPI空闲
+    while(__HAL_SPI_GET_FLAG(&hspi1, SPI_FLAG_TXE) == RESET);
+
+    // 启动DMA传输
+    HAL_SPI_Transmit_DMA(&hspi1, tx_buf, size);
+}
+
+// SPI DMA接收
+void SPI_DMA_Rx(uint8_t *rx_buf, uint16_t size) {
+    HAL_SPI_Receive_DMA(&hspi1, rx_buf, size);
+}
+
+// 完整通信（同时收发）
+void SPI_Transfer(uint8_t *tx_buf, uint8_t *rx_buf, uint16_t size) {
+    HAL_SPI_TransmitReceive_DMA(&hspi1, tx_buf, rx_buf, size);
+}
+
+// DMA完成回调
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
+    // 数据处理完成
+}
+```
+
+#### 多从机配置
+
+```c
+// 片选控制
+void SPI_Select(uint8_t cs) {
+    // 禁用所有从机
+    HAL_GPIO_WritePin(CS1_GPIO_Port, CS1_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(CS2_GPIO_Port, CS2_Pin, GPIO_PIN_SET);
+
+    // 使能指定从机
+    switch(cs) {
+        case 1: HAL_GPIO_WritePin(CS1_GPIO_Port, CS1_Pin, GPIO_PIN_RESET); break;
+        case 2: HAL_GPIO_WritePin(CS2_GPIO_Port, CS2_Pin, GPIO_PIN_RESET); break;
+    }
+}
+```
+
+### 5.4 I2C详解
+
+#### 总线速度
+
+| 模式 | 速度 | 备注 |
+|------|------|------|
+| 标准 | 100kHz | 兼容SMBus |
+| 快速 | 400kHz | |
+| 快速+ | 1MHz | |
+| 高速 | 3.4MHz | 需要额外硬件 |
+
+#### 状态机
+
+```
+┌─────────┐
+│  起始   │ ←──┐
+└────┬────┘    │
+     │         │
+┌────▼─────────┐│
+│  发送地址   │─┤
+└────┬────────┘│
+     │         │
+     ├─────────┼──────────┐
+     │         │          │
+┌────▼──┐  ┌──▼────┐  ┌──▼─────┐
+│  ACK  │  │ NACK  │  │ 错误   │
+└───┬───┘  └───┬───┘  └───┬─────┘
+    │          │          │
+    │    ┌─────┴─────┐    │
+    │    │           │    │
+┌───▼────▼───┐ ┌─────▼────▼───┐
+│   发送数据  │ │   接收数据   │
+└─────┬──────┘ └──────┬──────┘
+      │               │
+      └───────┬───────┘
+              │
+        ┌─────▼─────┐
+        │   停止    │
+        └───────────┘
+```
+
+#### DMA传输
+
+```c
+// I2C DMA发送
+HAL_StatusTypeDef I2C_DMA_Send(uint16_t DevAddress,
+                                uint16_t MemAddress,
+                                uint8_t *data,
+                                uint16_t size) {
+    hi2c1.Instance->CR1 |= I2C_CR1_START;
+
+    // 等待起始条件发送完成
+    while(!__HAL_I2C_GET_FLAG(&hi2c1, I2C_FLAG_SB));
+
+    // 发送地址
+    hi2c1.Instance->DR = DevAddress;
+
+    // 等待地址发送完成
+    while(!__HAL_I2C_GET_FLAG(&hi2c1, I2C_FLAG_ADDR));
+    __HAL_I2C_CLEAR_ADDRFLAG(&hi2c1);
+
+    // 发送内存地址（如果是内存地址模式）
+    if(MemAddress != 0xFFFF) {
+        while(!__HAL_I2C_GET_FLAG(&hi2c1, I2C_FLAG_TXE));
+        hi2c1.Instance->DR = MemAddress;
+    }
+
+    // 使能DMA
+    __HAL_I2C_DMABLE_ENABLE(&hi2c1);
+    HAL_DMA_Start_IT(hi2c1.hdmatx, (uint32_t)data,
+                     (uint32_t)&hi2c1.Instance->DR, size);
+
+    return HAL_OK;
+}
+```
+
+#### 总线死锁处理
+
+```c
+// I2C总线死锁检测与恢复
+void I2C_BusRecovery(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    // 配置SCL为推挽输出
+    GPIO_InitStruct.Pin = I2C_SCL_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(I2C_PORT, &GPIO_InitStruct);
+
+    // 手动产生9个时钟脉冲
+    for(int i = 0; i < 9; i++) {
+        HAL_GPIO_WritePin(I2C_PORT, I2C_SCL_PIN, GPIO_PIN_RESET);
+        delay_us(5);
+        HAL_GPIO_WritePin(I2C_PORT, I2C_SCL_PIN, GPIO_PIN_SET);
+        delay_us(5);
+    }
+
+    // 发送停止条件
+    HAL_GPIO_WritePin(I2C_PORT, I2C_SCL_PIN, GPIO_PIN_RESET);
+    delay_us(5);
+    HAL_GPIO_WritePin(I2C_PORT, I2C_SDA_PIN, GPIO_PIN_RESET);
+    delay_us(5);
+    HAL_GPIO_WritePin(I2C_PORT, I2C_SCL_PIN, GPIO_PIN_SET);
+    delay_us(5);
+    HAL_GPIO_WritePin(I2C_PORT, I2C_SDA_PIN, GPIO_PIN_SET);
+
+    // 恢复I2C配置
+    // ... 重新初始化I2C
+}
+```
+
+### 5.5 TIM定时器详解
+
+#### 定时器类型
+
+| 类型 | 特点 | 用途 |
+|------|------|------|
+| 基本定时器 | 6位自动重载 | 定时中断 |
+| 通用定时器 | 16位PWM/捕获 | 电机/PWM |
+| 高级定时器 | 互补输出+死区 | 逆变器 |
+| 低功耗定时器 | 睡眠可用 | 唤醒 |
+
+#### PWM输出配置
+
+```c
+void TIM_PWM_Init(void) {
+    TIM_HandleTypeDef htim;
+    TIM_OC_InitTypeDef sConfig = {0};
+
+    // 配置TIM3通道1为PWM
+    htim.Instance = TIM3;
+    htim.Init.Prescaler = 84-1;        // 84MHz / 84 = 1MHz
+    htim.Init.Period = 1000-1;         // 1MHz / 1000 = 1kHz
+    htim.Init.CounterMode = TIM_COUNTERMODE_UP;
+    HAL_TIM_PWM_Init(&htim);
+
+    // 配置PWM通道
+    sConfig.OCMode = TIM_OCMODE_PWM1;
+    sConfig.Pulse = 500;               // 50% 占空比
+    sConfig.OCPolarity = TIM_OCPOLARITY_HIGH;
+    sConfig.OCFastMode = TIM_OCFAST_DISABLE;
+    HAL_TIM_PWM_ConfigChannel(&htim, &sConfig, TIM_CHANNEL_1);
+
+    // 使能输出
+    HAL_TIM_PWM_Start(&htim, TIM_CHANNEL_1);
+}
+
+// 改变占空比
+void TIM_SetDutyCycle(uint32_t duty) {
+    __HAL_TIM_SET_COMPARE(&htim, TIM_CHANNEL_1, duty);
+}
+
+// 改变频率
+void TIM_SetFrequency(uint32_t freq) {
+    uint32_t period = 84000000 / freq;
+    __HAL_TIM_SET_AUTORELOAD(&htim, period - 1);
+}
+```
+
+#### 输入捕获
+
+```c
+void TIM_IC_Init(void) {
+    TIM_IC_InitTypeDef sConfig = {0};
+
+    // 配置通道1为输入捕获
+    sConfig.ICPolarity = TIM_ICPOLARITY_RISING;
+    sConfig.ICSelection = TIM_ICSELECTION_DIRECTTI;
+    sConfig.ICPrescaler = TIM_ICPSC_DIV1;
+    sConfig.ICFilter = 0;
+    HAL_TIM_IC_ConfigChannel(&htim, &sConfig, TIM_CHANNEL_1);
+
+    // 使能捕获中断
+    HAL_TIM_IC_Start_IT(&htim, TIM_CHANNEL_1);
+}
+
+// 捕获回调 - 计算频率和占空比
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
+    if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+        // 捕获上升沿
+        uint32_t value1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+
+        // 切换到下降沿捕获
+        __HAL_TIM_SET_CAPTUREPOLARITY(htim, TIM_CHANNEL_1, TIM_ICPOLARITY_FALLING);
+    }
+    else if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2) {
+        // 捕获下降沿
+        uint32_t value2 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+
+        // 计算
+        uint32_t period = value2 - value1;  // 周期
+        uint32_t duty = value1;             // 高电平宽度
+
+        // 切回上升沿
+        __HAL_TIM_SET_CAPTUREPOLARITY(htim, TIM_CHANNEL_1, TIM_ICPOLARITY_RISING);
+    }
+}
+```
+
+#### 编码器模式
+
+```c
+void TIM_Encoder_Init(void) {
+    TIM_Encoder_InitTypeDef sConfig = {0};
+
+    // 配置编码器接口
+    sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
+    sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+    sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+    sConfig.IC1Filter = 6;
+    sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+    sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+    sConfig.IC2Filter = 6;
+
+    HAL_TIM_Encoder_Init(&htim, &sConfig);
+
+    // 使能定时器
+    HAL_TIM_Encoder_Start(&htim, TIM_CHANNEL_ALL);
+}
+
+// 读取编码器值
+int32_t Encoder_Read(void) {
+    return (int32_t)__HAL_TIM_GET_COUNTER(&htim);
+}
+```
+
+### 5.6 RTC详解
+
+#### 功能说明
+
+```c
+void RTC_Init(void) {
+    RTC_HandleTypeDef hrtc;
+    RTC_DateTypeDef sDate = {0};
+    RTC_TimeTypeDef sTime = {0};
+
+    // 配置RTC
+    hrtc.Instance = RTC;
+    hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+    hrtc.Init.AsynchPrediv = 127;    // 32.768KHz / 128 - 1 = 256Hz
+    hrtc.Init.SynchPrediv = 255;      // 256Hz / 256 = 1Hz
+    hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+    HAL_RTC_Init(&hrtc);
+
+    // 设置时间
+    sTime.Hours = 12;
+    sTime.Minutes = 30;
+    sTime.Seconds = 0;
+    sTime.DayLightSaving = RTC_DAYLIGHTSAVE_NONE;
+    sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+    HAL_RTC_SetTime(&hrtc, &sTime, FORMAT_BIN);
+
+    // 设置日期
+    sDate.WeekDay = RTC_WEEKDAY_WEDNESDAY;
+    sDate.Month = RTC_MONTH_MARCH;
+    sDate.Date = 5;
+    sDate.Year = 26;
+    HAL_RTC_SetDate(&hrtc, &sDate, FORMAT_BIN);
+}
+```
+
+#### 闹钟配置
+
+```c
+void RTC_Alarm_Init(void) {
+    RTC_AlarmTypeDef sAlarm = {0};
+
+    // 配置闹钟A：每天8:30
+    sAlarm.AlarmTime.Hours = 8;
+    sAlarm.AlarmTime.Minutes = 30;
+    sAlarm.AlarmTime.Seconds = 0;
+    sAlarm.AlarmTime.SubSeconds = 0;
+    sAlarm.AlarmMask = RTC_ALARMMASK_DATEWEEKDAY;
+    sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
+    sAlarm.Alarm = RTC_ALARM_A;
+
+    HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, FORMAT_BIN);
+}
+
+// 闹钟中断处理
+void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc) {
+    // 闹钟触发处理
+}
+```
+
+### 5.7 看门狗详解
+
+#### 独立看门狗（IWDG）
+
+**特点**：
+- 独立LSI时钟（~40kHz）
+- 适用于对精度要求不高的场景
+- 无法停止
+
+```c
+void IWDG_Init(void) {
+    // 启动IWDG
+    // 预分频: 4 * 2^prer = 4 * 2^4 = 256
+    // 超时: 40K / 256 = 156Hz (6.4ms)
+    // reload: 156 * 1s = 156
+    IWDG->KR = IWDG_KEY_ENABLE;
+    IWDG->PR = IWDG_PR_PR_4;
+    IWDG->RLR = 156;  // 1秒超时
+}
+
+// 喂狗
+void IWDG_Feed(void) {
+    IWDG->KR = IWDG_KEY_RELOAD;
+}
+```
+
+#### 窗口看门狗（WWDG）
+
+**特点**：
+- 使用APB1时钟
 - 可配置窗口期
 - 早期唤醒中断（EWI）
-- 可触发复位或中断
 
-**喂狗时机**：
-- IWDG：计数器<窗口值
-- WWDG：计数器在窗口范围内
+```c
+void WWDG_Init(void) {
+    // 窗口值: 0x7F
+    // 预分频: 8
+    // 计数器初值: 0x7F
+    WWDG->CFR = 0x60 | WWDG_CFR_WDGTB_2;  // 窗口0x60, 预分频8
+    WWDG->CR = 0x7F | WWDG_CR_WDGA;       // 启动, 初值0x7F
+}
 
-**超时计算**：
+// 喂狗（必须在窗口内）
+void WWDG_Feed(void) {
+    WWDG->CR = 0x7F;  // 重装计数器
+}
 ```
-IWDG: Tout = (4 * 2^prescaler) * (reload) / LSI
+
+**窗口计算**：
+```
+窗口期 = (W[6:0] - T[6:0]) * Tclk_WWDG
+Tclk_WWDG = PCLK1 / (4096 * 2^(WDGTB[2:0]))
 ```
 
-#### CAN（控制器局域网）
+### 5.8 CAN详解
 
-**CAN2.0B**：
-- 标准帧（11位ID）
-- 扩展帧（29位ID）
-- 速率：125k/250/1M
-k/500k- 消息过滤（ID掩码）
-- 错误处理
+#### CAN2.0B
 
-**CAN-FD**：
-- 灵活数据速率
-- 数据段可达64字节
-- 速率：2M-8M
-- 兼容CAN2.0
+**帧类型**：
+- 数据帧：传输数据
+- 遥控帧：请求数据
+- 错误帧：错误通知
+- 过载帧：过载通知
+- 间隔帧：分隔帧
 
-**位时序**：
-- 同步段(Seg)
-- 传播段(Prop Seg)
-- 相位段1/2(Phase Seg1/2)
-- 采样点位置
+**标识符**：
+- 标准帧：11位ID
+- 扩展帧：29位ID
 
-**常见问题**：
-- 总线终端电阻（120Ω）
-- 位时间配置
-- 总线负载率
-- 错误帧处理
+#### CAN-FD
 
-#### COMP（比较器）
+**特点**：
+- 数据段速率：2M-8Mbps
+- 数据长度：64字节
+- 灵活数据率
 
-- 可编程阈值
-- 高速/低速模式
-- 输出滤波
-- 窗口比较
-- 触发ADC/TIM
+#### 位时序配置
 
-#### OPAMP（运算放大器）
+```c
+void CAN_Init(void) {
+    CAN_FilterTypeDef sFilterConfig;
 
-- 可编程增益
-- 跟随/比较/放大模式
-- 与ADC/DAC联动
+    // 配置过滤器
+    sFilterConfig.FilterBank = 0;
+    sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+    sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+    sFilterConfig.FilterIdHigh = 0x0000;
+    sFilterConfig.FilterIdLow = 0x0000;
+    sFilterConfig.FilterMaskIdHigh = 0x0000;
+    sFilterConfig.FilterMaskIdLow = 0x0000;
+    sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
+    sFilterConfig.FilterActivation = ENABLE;
+    sFilterConfig.SlaveStartFilterBank = 14;
 
-### 5.2 高速外设
+    HAL_CAN_ConfigFilter(&hcan, &sFilterConfig);
 
-#### USB（通用串行总线）
+    // 启动CAN
+    HAL_CAN_Start(&hcan);
 
-**模式**：
-- Device模式：CDC/HID/DFU/MTP
-- Host模式：Mass Storage/HID
-- OTG模式：双重角色
+    // 开启接收中断
+    HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING);
+}
 
-**速率**：
-- USB 1.1：低速1.5Mbps/全速12Mbps
-- USB 2.0：高速480Mbps
-- USB 3.0：超高速5Gbps
+// 发送消息
+HAL_StatusTypeDef CAN_Send(uint32_t ID, uint8_t *data, uint8_t len) {
+    CAN_TxHeaderTypeDef TxHeader;
+    uint32_t TxMailbox;
 
-**类驱动**：
-- HID：键盘/鼠标/手柄
-- CDC：虚拟串口
-- MSC：U盘
-- DFU：固件升级
-- AUDIO：音频
+    TxHeader.StdId = ID;
+    TxHeader.ExtId = 0;
+    TxHeader.IDE = CAN_ID_STD;
+    TxHeader.RTR = CAN_RTR_DATA;
+    TxHeader.DLC = len;
+    TxHeader.TransmitGlobalTime = DISABLE;
 
-#### ETH（以太网）
+    return HAL_CAN_AddTxMessage(&hcan, &TxHeader, data, &TxMailbox);
+}
 
-**MAC控制器**：
-- 10/100M/1G速率
-- MII/RMII/GMII接口
-- DMA环形缓冲区
-- 帧过滤（MAC/VLAN）
+// 接收回调
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
+    CAN_RxHeaderTypeDef RxHeader;
+    uint8_t rx_data[8];
 
-**PHY**：
-- 物理层芯片
-- 自动协商
-- MDIO管理
+    HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, rx_data);
 
-**软件栈**：
-- LwIP
-- FreeRTOS-TCP
-- uIP
+    // 处理数据
+    if(RxHeader.StdId == 0x123) {
+        // 处理
+    }
+}
+```
 
-#### SDIO（安全数字输入输出）
+### 5.9 USB详解
 
-**支持**：
-- SD卡（SDSC/SDHC/SDXC）
-- eMMC
-- WiFi模块
+#### USB设备模式
 
-**速率**：
-- SD卡：默认25MHz/高速50MHz
-- eMMC：8位/52MHz
+```c
+// USB CDC类初始化（虚拟串口）
+void USB_Init(void) {
+    USBD_CDC_ItfTypeDef fops = {
+        .Control = CDC_Control,
+        .Receive = CDC_Receive
+    };
 
-#### DCMI/CSI（摄像头接口）
+    USBD_Init(&hUsbDevice, &CDC_Desc, DEVICE_FS);
+    USBD_CDC_RegisterInterface(&hUsbDevice, &fops);
+    USBD_Start(&hUsbDevice);
+}
 
-**DCMI（并行）**：
-- 8/10/12位并行
-- 支持YUV/RGB/JPEG
-- DMA传输
+// CDC数据接收
+uint8_t CDC_Receive(uint8_t *Buf, uint32_t *Len) {
+    // 处理接收数据
+    ProcessUSBData(Buf, *Len);
+    return USBD_OK;
+}
 
-**CSI（串行）**：
-- MIPI CSI-2
-- 1-4 lane
-- 更高速率
+// CDC数据发送
+uint8_t CDC_Send(uint8_t *Buf, uint32_t Len) {
+    return USBD_CDC_TransmitPacket(&hUsbDevice);
+}
+```
 
-#### DMA（直接内存访问）
+### 5.10 ETH以太网详解
 
-**特性**：
-- 独立于CPU传输
-- 通道/流/Stream概念
-- 优先级配置
-- 循环/双缓冲模式
+#### LWIP集成
+
+```c
+void Ethernet_Init(void) {
+    // 初始化DMA描述符
+    for(int i = 0; i < ETH_RXBUFNB; i++) {
+        RxBuff[i].status = 0;
+        RxBuff[i].length = ETH_RX_BUF_SIZE;
+        RxBuff[i].buffer = Rx_Buff[i];
+        RxBuff[i].next = &RxBuff[i+1];
+    }
+    RxBuff[ETH_RXBUFNB-1].next = &RxBuff[0];
+
+    // 初始化MAC
+    heth.Instance = ETH;
+    heth.Init.MACAddr = mac_addr;
+    heth.Init.MediaType = ETH_MEDIA_MODE_AUTOMOTIV;
+    heth.Init.CheckSumOffload = ETH_CHECKSUM_OFFLOAD_DISABLE;
+    heth.Init.DisableDropRetryPackets = ETH_DROP_PACKET_ENABLE;
+    heth.Init.ForwardUndersizedGoodFrames = ETH_FORWARD_UNDERSIZED_GOOD_FRAMES;
+    heth.Init.ReceiveStoreForward = ETH_RECEIVE_STORE_FORWARD;
+    heth.Init.TransmitStoreForward = ETH_TRANSMIT_STORE_FORWARD;
+    heth.Init.ForwardErrorFrames = ETH_FORWARD_ERROR_FRAMES;
+
+    HAL_ETH_Init(&heth);
+
+    // 设置MAC地址
+    HAL_ETH_SetMACAddr(&heth, mac_addr);
+
+    // 开启接收
+    __HAL_ETH_DMA_ENABLE(&heth);
+}
+```
 
 ---
 
 ## 6. DMA常用应用
 
-### 6.1 内存到内存传输
+### 6.1 DMA工作原理
 
-```c
-DMA_InitTypeDef DMA_InitStructure;
-DMA_InitStructure.Direction = DMA_MEMORY_TO_MEMORY;
-DMA_InitStructure.MemoryInc = DMA_MemoryInc_Enable;
-DMA_Init(DMA2_Stream0, &DMA_InitStructure);
+#### DMA传输类型
+
+| 类型 | 说明 |
+|------|------|
+| 内存到内存 | 最高优先级，不需要外设 |
+| 外设到内存 | 如ADC/UART接收 |
+| 内存到外设 | 如UART/DAC发送 |
+
+#### DMA控制器结构
+
+```
+┌─────────────────────────────────────────┐
+│              DMA Controller             │
+├─────────────────────────────────────────┤
+│  Stream/Channel 1                       │
+│  - 源地址                                │
+│  - 目标地址                              │
+│  - 传输数量                              │
+│  - 配置(Flow Ctrl, Inc, Size, Priority) │
+├─────────────────────────────────────────┤
+│  Stream/Channel 2-8                     │
+│  ...                                    │
+└─────────────────────────────────────────┘
 ```
 
-### 6.2 外设到内存传输
-
-**UART DMA接收**：
-```c
-DMA_InitStructure.Direction = DMA_PERIPH_TO_MEMORY;
-DMA_InitStructure.MemoryInc = DMA_MemoryInc_Enable;
-DMA_InitStructure.PeripheralInc = DMA_PeripheralInc_Disable;
-DMA_InitStructure.MemoryDataSize = DMA_MemoryDataSize_Byte;
-DMA_Init(DMA2_Stream5, &DMA_InitStructure);
-// 配置UART的RX DMA
-```
-
-**ADC DMA采集**：
-```c
-DMA_InitStructure.Direction = DMA_PERIPH_TO_MEMORY;
-DMA_InitStructure.MemoryDataSize = DMA_MemoryDataSize_HalfWord;
-DMA_InitStructure.MemoryInc = DMA_MemoryInc_Enable;
-// 连续转换模式 + DMA
-```
-
-### 6.3 内存到外设传输
-
-**UART DMA发送**：
-```c
-DMA_InitStructure.Direction = DMA_MEMORY_TO_PERIPH;
-DMA_InitStructure.MemoryInc = DMA_MemoryInc_Enable;
-// 配合TXE中断或DMA完成中断
-```
-
-### 6.4 双缓冲/循环模式
-
-**双缓冲**：
-- 双数据缓冲区
-- 切换时产生中断
-- 适合高速数据流
-
-**循环模式**：
-- 自动重载
-- 适合周期性采样
-- 无需中断重配置
-
-### 6.5 DMA与中断结合
+### 6.2 内存到内存传输
 
 ```c
-// DMA半传输完成中断
-DMA_ITConfig(DMA2_Stream5, DMA_IT_HT, ENABLE);
+void DMA_M2M_Init(void) {
+    DMA_HandleTypeDef hdma;
 
-// DMA传输完成中断
-DMA_ITConfig(DMA2_Stream5, DMA_IT_TC, ENABLE);
+    hdma.Instance = DMA2_Stream0;
+    hdma.Init.Channel = DMA_CHANNEL_0;
+    hdma.Init.Direction = DMA_MEMORY_TO_MEMORY;
+    hdma.Init.PeriphInc = DMA_PINC_ENABLE;
+    hdma.Init.MemInc = DMA_MINC_ENABLE;
+    hdma.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hdma.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    hdma.Init.Mode = DMA_NORMAL;
+    hdma.Init.Priority = DMA_PRIORITY_HIGH;
+    hdma.Init.FIFOMode = DMA_FIFOMODE_ENABLE;
+    hdma.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_FULL;
+    hdma.Init.MemBurst = DMA_MBURST_SINGLE;
+    hdma.Init.PeriphBurst = DMA_PBURST_SINGLE;
 
-// 中断处理
-void DMA2_Stream5_IRQHandler(void) {
-    if(DMA_GetITStatus(DMA2_Stream5, DMA_IT_TC)) {
-        // 数据处理
-        DMA_ClearITPendingBit(DMA2_Stream5, DMA_IT_TC);
-    }
+    HAL_DMA_Init(&hdma);
+}
+
+// 执行内存拷贝
+void DMA_MemCopy(uint32_t src, uint32_t dst, uint32_t size) {
+    HAL_DMA_Start(&hdma, src, dst, size);
+    HAL_DMA_PollForTransfer(&hdma, HAL_DMA_FULL_TRANSFER, HAL_MAX_DELAY);
 }
 ```
 
-### 6.6 DMA链式传输
+### 6.3 外设到内存（UART DMA）
 
-- 多描述符链表
-- 自动切换
-- 适合复杂传输场景
+```c
+// DMA接收配置
+void UART_DMA_Rx_Init(uint8_t *rx_buf, uint32_t size) {
+    // 配置DMA
+    hdma_usart1_rx.Instance = DMA2_Stream5;
+    hdma_usart1_rx.Init.Channel = DMA_CHANNEL_4;
+    hdma_usart1_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_usart1_rx.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_usart1_rx.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_usart1_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hdma_usart1_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    hdma_usart1_rx.Init.Mode = DMA_CIRCULAR;  // 循环模式
+    hdma_usart1_rx.Init.Priority = DMA_PRIORITY_HIGH;
 
-### 6.7 DMA异常处理
+    HAL_DMA_Init(&hdma_usart1_rx);
 
-**常见问题**：
-- 传输错误
-- 传输超时
-- 缓冲区溢出
+    // 关联到UART
+    __HAL_LINKDMA(&huart1, hdmarx, hdma_usart1_rx);
 
-**处理方法**：
-- 使能错误中断
-- 检查标志位
-- 复位DMA通道
+    // 开启DMA
+    HAL_UART_Receive_DMA(&huart1, rx_buf, size);
+}
+```
+
+### 6.4 ADC+DMA
+
+```c
+// ADC DMA采集多通道
+void ADC_DMA_Init(void) {
+    ADC_ChannelConfTypeDef sConfig = {0};
+
+    // 配置ADC
+    hadc.Instance = ADC1;
+    hadc.Init.ScanConvMode = ADC_SCAN_ENABLE;  // 多通道
+    hadc.Init.ContinuousConvMode = ENABLE;
+    hadc.Init.DiscontinuousConvMode = DISABLE;
+    hadc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+    hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+    hadc.Init.NbrOfConversion = 3;  // 3个通道
+
+    HAL_ADC_Init(&hadc);
+
+    // 通道0: PA0 - 温度传感器
+    sConfig.Channel = ADC_CHANNEL_0;
+    sConfig.Rank = ADC_REGULAR_RANK_1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_28CYCLES_5;
+    HAL_ADC_ConfigChannel(&hadc, &sConfig);
+
+    // 通道1: PA1 - 电位器
+    sConfig.Channel = ADC_CHANNEL_1;
+    sConfig.Rank = ADC_REGULAR_RANK_2;
+    HAL_ADC_ConfigChannel(&hadc, &sConfig);
+
+    // 通道2: PA2 - 光敏
+    sConfig.Channel = ADC_CHANNEL_2;
+    sConfig.Rank = ADC_REGULAR_RANK_3;
+    HAL_ADC_ConfigChannel(&hadc, &sConfig);
+
+    // 配置DMA
+    hdma_adc.Instance = DMA2_Stream0;
+    hdma_adc.Init.Channel = DMA_CHANNEL_0;
+    hdma_adc.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_adc.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_adc.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_adc.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
+    hdma_adc.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
+    hdma_adc.Init.Mode = DMA_CIRCULAR;
+    hdma_adc.Init.Priority = DMA_PRIORITY_HIGH;
+
+    HAL_DMA_Init(&hdma_adc);
+    __HAL_LINKDMA(&hadc, dma_handle, hdma_adc);
+
+    // 启动ADC DMA
+    HAL_ADC_Start_DMA(&hadc, (uint32_t *)adc_buf, 3);
+}
+
+// 使用：读取ADC值
+uint16_t ADC_GetValue(uint8_t channel) {
+    return adc_buf[channel];
+}
+```
+
+### 6.5 双缓冲模式
+
+```c
+// 双缓冲配置
+void DMA_DoubleBuffer_Init(void *buf1, void *buf2, uint32_t size) {
+    hdma.Instance = DMA1_Stream0;
+    hdma.Init.Channel = DMA_CHANNEL_4;
+    hdma.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma.Init.MemInc = DMA_MINC_ENABLE;
+    hdma.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hdma.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    hdma.Init.Mode = DMA_CIRCULAR;
+    hdma.Init.Priority = DMA_PRIORITY_HIGH;
+
+    // 使能双缓冲
+    hdma.Init.DoubleBufferMode = DMA_DOUBLEBUFFERMODE_ENABLE;
+
+    HAL_DMA_Init(&hdma);
+
+    // 设置缓冲区地址
+    HAL_DMA_SetBuffers(&hdma, buf1, buf2, size);
+
+    // 启动
+    HAL_DMA_Start(&hdma, (uint32_t)&USART1->DR, (uint32_t)buf1, size);
+}
+
+// 获取当前缓冲区
+void* DMA_GetCurrentBuffer(void) {
+    return (void *)((DMA_HandleTypeDef*)&hdma)->Instance->M0AR;
+}
+
+// 切换回调
+void HAL_DMA_RxHalfCpltCallback(DMA_HandleTypeDef *hdma) {
+    // 处理前半部分数据
+    ProcessBuffer(hdma->Instance->M0AR, BUFFER_SIZE/2);
+}
+
+void HAL_DMA_RxCpltCallback(DMA_HandleTypeDef *hdma) {
+    // 处理后半部分数据
+    ProcessBuffer(hdma->Instance->M1AR, BUFFER_SIZE/2);
+}
+```
 
 ---
 
 ## 7. 缓存相关知识
 
-### 7.1 I-Cache / D-Cache
+### 7.1 缓存架构
 
-**指令缓存(I-Cache)**：
-- 缓存指令
-- 读取指令
-- 自动缓存命中
+#### Cortex-M7缓存
 
-**数据缓存(D-Cache)**：
-- 缓存数据
-- 读写缓存
-- 写回/直写策略
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Cortex-M7                           │
+│  ┌─────────────┐        ┌─────────────┐                 │
+│  │  I-Cache    │        │  D-Cache    │                 │
+│  │  4-64KB     │        │  4-64KB     │                 │
+│  └──────┬──────┘        └──────┬──────┘                 │
+│         │                      │                        │
+│         └──────────┬────────────┘                        │
+│                    ↓                                    │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              Core Pipeline                      │    │
+│  └─────────────────────────────────────────────────┘    │
+│                    ↓                                    │
+│         ┌──────────────────────┐                       │
+│         │  TCM Interface        │  零等待              │
+│         └──────────────────────┘                       │
+└─────────────────────────────────────────────────────────┘
+```
 
-### 7.2 缓存行（Cache Line）
+#### 缓存行结构
 
-- 典型大小：32字节
-- 对齐要求
-- 最小缓存单位
+```
+┌────────────────────────────────────────┐
+│           Cache Line (32B)             │
+├──────────┬──────────┬─────────┬─────────┤
+│ Tag      │ Index    │ Offset  │  Data   │
+│ (21bit)  │ (6bit)   │ (5bit)  │ (256bit)│
+└──────────┴──────────┴─────────┴─────────┘
+```
 
-### 7.3 缓存策略
+### 7.2 缓存策略
 
-| 策略 | 描述 |
-|------|------|
-| WT (Write Through) | 写同时更新内存 |
-| WB (Write Back) | 写仅更新缓存 |
-| RA (Read Allocate) | 读缺失时分配 |
-| no-RA | 读缺失时不分配 |
+| 策略 | 读操作 | 写操作 |
+|------|--------|--------|
+| **WT (Write Through)** | 缓存命中返回数据 | 同时写缓存和内存 |
+| **WB (Write Back)** | 缓存命中返回数据 | 只写缓存，标记脏位 |
+| **RA (Read Allocate)** | 未命中分配缓存行 | - |
+| **no-RA** | 未命中不分配 | - |
 
-### 7.4 缓存一致性
+### 7.3 缓存一致性问题
 
-#### DMA与缓存一致性问题
+#### DMA与缓存冲突
 
 **问题描述**：
-- DMA从内存读取数据时，内存中可能是脏数据
-- DMA写入内存后，CPU缓存中可能是旧数据
+```
+场景1: CPU写 -> DMA传输
+┌─────────────────────────────────────────┐
+│ CPU写入: DMA缓冲区 [0x20001000]        │
+│   ↓                                    │
+│ 写操作命中D-Cache (数据在Cache中)       │
+│   ↓                                    │
+│ Cache标记为"脏"                        │
+│   ↓                                    │
+│ DMA从内存读取 (未考虑Cache)             │
+│   ↓                                    │
+│ ❌ DMA得到旧数据                       │
+└─────────────────────────────────────────┘
 
-**软件维护方法**：
+场景2: DMA接收 -> CPU读取
+┌─────────────────────────────────────────┐
+│ DMA写入: DMA缓冲区 [0x20001000]         │
+│   ↓                                    │
+│ 写入内存 (Cache未更新)                 │
+│   ↓                                    │
+│ CPU读取: 命中Cache                     │
+│   ↓                                    │
+│ ❌ CPU得到旧数据                       │
+└─────────────────────────────────────────┘
+```
+
+#### 解决方案
 
 ```c
-// CPU写DMA缓冲区前：Clean（清空缓存到内存）
-void DMA BufferClean(void *addr, uint32_t size) {
-    SCB_InvalidateDCache_by_Addr((uint32_t*)addr, size);
+// 方法1: 禁用缓存区域
+void MPU_NonCacheable_Init(void) {
+    MPU_Region_InitTypeDef MPU_InitStruct = {0};
+
+    HAL_MPU_Disable();
+
+    // 配置DMA缓冲区为不可缓存
+    MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+    MPU_InitStruct.Number = MPU_REGION_NUMBER1;
+    MPU_InitStruct.BaseAddress = 0x20010000;  // DMA缓冲区
+    MPU_InitStruct.Size = MPU_REGION_SIZE_64KB;
+    MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+    MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+    MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+    HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 }
 
-// CPU读DMA缓冲区后：Invalidate（使缓存失效）
-void DMA_BufferInvalidate(void *addr, uint32_t size) {
-    SCB_InvalidateDCache_by_Addr((uint32_t*)addr, size);
+// 方法2: 软件维护一致性
+// CPU发送数据前Clean缓存
+void DMA_SendBuffer(uint8_t *buf, uint32_t len) {
+    // 确保缓冲区数据写入内存
+    SCB_CleanDCache_by_Addr((uint32_t*)buf, len);
+
+    // 启动DMA
+    HAL_DMA_Start(&hdma, (uint32_t)buf, (uint32_t)&USART1->DR, len);
+}
+
+// CPU接收数据后Invalidate缓存
+void DMA_ReceiveBuffer(uint8_t *buf, uint32_t len) {
+    // 启动DMA
+    HAL_DMA_Start(&hdma, (uint32_t)&USART1->DR, (uint32_t)buf, len);
+
+    // 等待完成
+    HAL_DMA_PollForTransfer(&hdma, HAL_DMA_FULL_TRANSFER, HAL_MAX_DELAY);
+
+    // 使缓存失效，从内存读取新数据
+    SCB_InvalidateDCache_by_Addr((uint32_t*)buf, len);
 }
 ```
 
-**常见场景**：
-- UART DMA接收：Invalidate
-- UART DMA发送：Clean
-- ADC DMA采集：Invalidate
-- DAC DMA发送：Clean
+### 7.4 内存屏障
 
-#### Cache Coherent DMA
-- 硬件维护一致性
-- 不需要软件干预
-
-#### MPU配置与缓存
 ```c
-// 配置内存区域为无缓存
-MPU_Region_InitTypeDef MPU_InitStruct;
-MPU_InitStruct.Enable = MPU_REGION_ENABLE;
-MPU_InitStruct.Number = MPU_REGION_NUMBER0;
-MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
-MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
-MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
-MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
-HAL_MPU_ConfigRegion(&MPU_InitStruct);
+// 数据屏障 - 确保所有内存访问完成
+__DMB();  // Data Memory Barrier
+
+// 指令屏障 - 确保后续指令从内存读取
+__ISB();  // Instruction Synchronization Barrier
+
+// 数据同步屏障 - 确保所有内存访问完成并刷新流水线
+__DSB();  // Data Synchronization Barrier
+
+// 典型使用场景
+void MemoryBarrier_Example(void) {
+    // 写操作
+    flag = 1;
+    __DMB();  // 确保flag写入完成
+
+    // 读操作
+    __DMB();  // 确保之前写完成
+    if(flag) {
+        data = *buffer;
+    }
+}
 ```
-
-### 7.5 预取机制
-
-- 指令预取
-- 数据预取
-- 可配置关闭
-
-### 7.6 MPU对缓存的控制
-
-- 区域缓存属性配置
-- Shareable位设置
-- 设备内存 vs 普通内存
 
 ---
 
 ## 8. 调试技巧
 
-### 8.1 J-Link/ST-Link调试器
+### 8.1 调试器
 
-**J-Link**：
-- 支持ARM/Cortex全系列
-- 高速SWD/JTAG
-- RTT实时日志
-- Trace功能（需专业版）
+#### J-Link
 
-**ST-Link**：
-- STM8/32专用
+**特点**：
+- 支持所有ARM Cortex
+- 高速SWD（50MHz+）
+- RTT日志输出
+- Trace跟踪（需专业版）
+
+**RTT使用**：
+```c
+#include "SEGGER_RTT.h"
+
+// 初始化
+SEGGER_RTT_Init();
+
+// 输出
+SEGGER_RTT_printf(0, "Value: %d\n", value);
+
+// 阻塞输出
+SEGGER_RTT_WriteString(0, "Hello\n");
+```
+
+#### ST-Link
+
+**特点**：
+- STM32专用
 - SWD接口
 - 成本低
+- 有限功能
 
-### 8.2 SWD/JTAG协议原理
+### 8.2 SWD/JTAG协议
 
-**SWD（Serial Wire Debug）**：
-- 两根线（SWDIO/SWCLK）
-- 复位、编程、调试
-- 比JTAG节省引脚
+#### SWD时序
 
-**JTAG**：
-- 传统标准
-- 5/4线制
-- 支持边界扫描
+```
+SWDIO:  →→→→→→→→→→→→→→→→→→→→→→→→→→→
+SWCLK:  _‾‾‾_‾‾‾_‾‾‾_‾‾‾_‾‾‾_‾‾‾_‾‾‾_‾‾‾_
+
+        |← 1bit →|
+```
+
+#### 调试接口引脚
+
+| 引脚 | 功能 |
+|------|------|
+| SWDIO | 双向数据 |
+| SWCLK | 时钟 |
+| SWO | Trace输出（可选） |
+| RESET | 复位（可选） |
 
 ### 8.3 断点类型
 
-| 类型 | 说明 |
-|------|------|
-| 硬件断点 | 调试器实现，数量有限 |
-| 软件断点 | 替换指令，数量无限制 |
-| 条件断点 | 满足条件触发 |
-| 数据断点 | 访问特定地址触发 |
+| 类型 | 数量 | 实现方式 |
+|------|------|----------|
+| 硬件断点 | 4-6个 | 替换指令 |
+| 软件断点 | 无限 | BKPT指令 |
+| 条件断点 | 有限 | 组合实现 |
+| 数据断点 | 2-4个 | 地址监控 |
 
-### 8.4 观察点（Watchpoint）
+### 8.4 Trace功能
 
-- 监控数据访问
-- 读/写/访问触发
-- 用于内存分析
+#### ITM输出
 
-### 8.5 Trace功能
+```c
+// ITM调试输出
+void ITM_Send(uint32_t port, char c) {
+    if(ITM->TCR & ITM_TCR_ITMENA_Msk) {  // ITM使能
+        if(ITM->PORT[port].u32) {         // FIFO空
+            ITM->PORT[port].u8 = c;
+        }
+    }
+}
 
-**ETM（Embedded Trace Macrocell）**：
-- 指令跟踪
-- 需ETM引脚
+#define ITM_DEBUG(...)  do { \
+    char buf[128]; \
+    sprintf(buf, __VA_ARGS__); \
+    for(char *p = buf; *p; p++) ITM_Send(0, *p); \
+} while(0)
+```
 
-**ETB（Embedded Trace Buffer）**：
-- 片内Trace缓冲区
-- 有限容量
+### 8.5 常见调试问题
 
-**ITM（Instrumentation Trace Macrocell）**：
-- 软件日志输出
-- 硬件timestamp
-- 低开销
+#### 死机分析
 
-### 8.6 常见调试问题分析
+**常见原因**：
+1. 栈溢出
+2. 数组越界
+3. 空指针
+4. 硬件异常未捕获
+5. 看门狗复位
 
-**死机问题**：
-- 栈溢出
-- 非法内存访问
-- 硬件异常未捕获
+**分析方法**：
+```c
+// 栈溢出检测
+void CheckStackOverflow(void) {
+    // 检查堆栈水印
+    UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
+    if(watermark < 64) {
+        printf("Warning: Stack low! %u\n", watermark);
+    }
+}
+```
 
-**复位问题**：
-- 看门狗未喂狗
-- 电源问题
-- 复位引脚干扰
+#### 复位分析
 
-**数据异常**：
-- 缓存一致性问题
-- DMA配置错误
-- 并发访问冲突
+```c
+// 分析复位原因
+void CheckResetReason(void) {
+    if(__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST)) {
+        printf("Power-on reset\n");
+    }
+    if(__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST)) {
+        printf("NRST pin reset\n");
+    }
+    if(__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)) {
+        printf("Software reset\n");
+    }
+    if(__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)) {
+        printf("IWDG reset\n");
+    }
+    if(__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST)) {
+        printf("WWDG reset\n");
+    }
+    if(__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST)) {
+        printf("Low power reset\n");
+    }
+
+    __HAL_RCC_CLEAR_RESET_FLAGS();
+}
+```
 
 ---
 
@@ -881,261 +1958,453 @@ HAL_MPU_ConfigRegion(&MPU_InitStruct);
 
 ### 9.1 Bootloader设计
 
-#### 升级流程
-1. 接收新固件（UART/USB/网络）
-2. 验证固件完整性（CRC/签名）
-3. 写入备份区
-4. 跳转新固件
+#### 两级Bootloader架构
 
-#### A/B升级
-- 双分区设计
-- 失败回滚
-- 签名验证
+```
+┌─────────────────────────────────────────────────────┐
+│                    Flash布局                        │
+├─────────────────────────────────────────────────────┤
+│ 0x08000000 │  16KB  │  Bootloader A (ROM)         │  厂商
+├────────────┼────────┼──────────────────────────────┤
+│ 0x08004000 │  64KB  │  Bootloader B (Flash)       │  用户
+├────────────┼────────┼──────────────────────────────┤
+│ 0x08010000 │ 256KB  │  Application A              │
+├────────────┼────────┼──────────────────────────────┤
+│ 0x08050000 │ 256KB  │  Application B (Backup)    │
+├────────────┼────────┼──────────────────────────────┤
+│ 0x08090000 │ 128KB  │  Config/NVM                  │
+└────────────┴────────┴──────────────────────────────┘
+```
+
+#### 跳转实现
 
 ```c
-// 典型跳转代码
 typedef void (*JumpFunction)(void);
-uint32_t app_address = APP_START_ADDRESS;
-JumpFunction JumpToApp = (JumpFunction)(*(uint32_t*)(app_address + 4));
-SCB_DisableDCache();
-SCB_DisableICache();
-HAL_RCC_DeInit();
-SysTick->CTRL = 0;
-JumpToApp();
+
+void JumpToApp(uint32_t app_address) {
+    JumpFunction JumpToApp;
+    uint32_t stack_top;
+
+    // 检查栈顶地址是否有效
+    if((app_address < APP_FLASH_START) ||
+       (app_address >= APP_FLASH_END)) {
+        return;
+    }
+
+    // 获取栈顶地址
+    stack_top = *(uint32_t *)app_address;
+
+    // 检查栈顶是否在SRAM范围内
+    if((stack_top < SRAM_START) ||
+       (stack_top > SRAM_END)) {
+        return;
+    }
+
+    // 获取复位向量
+    JumpToApp = (JumpFunction)*(uint32_t *)(app_address + 4);
+
+    // 关闭所有外设
+    HAL_RCC_DeInit();
+    SysTick->CTRL = 0;
+    SysTick->LOAD = 0;
+    SysTick->VAL = 0;
+
+    // 禁用中断
+    __disable_irq();
+
+    // 清除所有中断挂起
+    for(int i = 0; i < 8; i++) {
+        NVIC->ICER[i] = 0xFFFFFFFF;
+        NVIC->ICPR[i] = 0xFFFFFFFF;
+    }
+
+    // 设置MSP
+    __set_MSP(stack_top);
+
+    // 禁用缓存（如果有）
+    SCB_DisableICache();
+    SCB_DisableDCache();
+
+    // 数据同步
+    __DSB();
+    __ISB();
+
+    // 跳转
+    JumpToApp();
+}
 ```
 
-### 9.2 启动流程
+#### 固件升级流程
 
-**上电**：
-1. 复位
-2. 读取栈顶地址（0x08000000）
-3. 取Reset_Handler地址
-4. 执行SystemInit
-5. 执行__main
-6. 跳转到main
-
-**阶段**：
-- ROM Bootloader（厂家）
-- Flash Bootloader（用户）
-- Application
-
-### 9.3 内存布局
-
-**链接脚本**：
 ```
+┌─────────────────────────────────────────────────────┐
+│                   升级流程                          │
+├─────────────────────────────────────────────────────┤
+│ 1. 接收新固件 (UART/USB/网络)                       │
+│ 2. 校验固件 (CRC/签名)                              │
+│ 3. 写入备份区 (B区)                                 │
+│ 4. 验证备份                                          │
+│ 5. 设置升级标志                                      │
+│ 6. 复位                                              │
+│ 7. Bootloader检查标志                               │
+│ 8. 拷贝B区到A区                                     │
+│ 9. 清除标志                                          │
+│ 10. 启动APP                                          │
+└─────────────────────────────────────────────────────┘
+```
+
+### 9.2 链接脚本
+
+```ld
+/* STM32F4xx 链接脚本 */
 MEMORY
 {
-  FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 512K
-  RAM (rwx)   : ORIGIN = 0x20000000, LENGTH = 128K
+    FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 512K
+    RAM (rwx)   : ORIGIN = 0x20000000, LENGTH = 128K
+    CCMRAM (rw) : ORIGIN = 0x10000000, LENGTH = 64K
 }
+
+/* 入口 */
+ENTRY(Reset_Handler)
+
+/* 栈和堆 */
+_stack_start = ORIGIN(RAM) + LENGTH(RAM);
+_estack = _stack_start;
+_Min_Heap_Size = 0x200;
+_Min_Stack_Size = 0x400;
 
 SECTIONS
 {
-  .text : { *(.text*) } > FLASH
-  .data : { *(.data*) } > RAM AT> FLASH
-  .bss  : { *(.bss*) } > RAM
+    /* 代码段 */
+    .text :
+    {
+        . = ALIGN(4);
+        KEEP(*(.isr_vector))
+        *(.text*)
+        *(.rodata*)
+        . = ALIGN(4);
+    } >FLASH
+
+    /* 只读数据 */
+    .rodata :
+    {
+        . = ALIGN(4);
+        *(.rodata*)
+        . = ALIGN(4);
+    } >FLASH
+
+    /* 数据段 - 加载到Flash，运行复制到RAM */
+    .data :
+    {
+        . = ALIGN(4);
+        _sdata = .;
+        *(.data*)
+        . = ALIGN(4);
+        _edata = .;
+    } >RAM AT> FLASH
+
+    _sidata = LOADADDR(.data);
+
+    /* BSS段 */
+    .bss :
+    {
+        . = ALIGN(4);
+        _sbss = .;
+        *(.bss*)
+        *(COMMON)
+        . = ALIGN(4);
+        _ebss = .;
+    } >RAM
+
+    /* CCMRAM */
+    .ccmram :
+    {
+        . = ALIGN(4);
+        *(.ccmram*)
+        . = ALIGN(4);
+    } >CCMRAM
+
+    /DISCARD/ :
+    {
+        libc.a (*)
+        libm.a (*)
+        libgcc.a (*)
+    }
 }
 ```
 
-### 9.4 Flash/EEPROM编程
+### 9.3 Flash编程
 
-**Flash操作**：
-- 扇区擦除
-- 编程（半字/字/双字）
-- 擦写寿命（10K-100K次）
+```c
+// Flash擦除
+HAL_StatusTypeDef Flash_Erase(uint32_t sector, uint32_t num) {
+    FLASH_EraseInitTypeDef EraseInitStruct;
+    uint32_t SectorError;
 
-**磨损均衡**：
-- 均衡算法
-- 跳过坏块
+    HAL_FLASH_Unlock();
 
-### 9.5 功耗管理
+    EraseInitStruct.TypeErase = FLASH_TYPEERASE_SECTORS;
+    EraseInitStruct.Banks = FLASH_BANK_1;
+    EraseInitStruct.Sector = sector;
+    EraseInitStruct.NbSectors = num;
+    EraseInitStruct.VoltageRange = FLASH_VOLTAGE_RANGE_3;
 
-**动态电压频率调节(DVFS)**：
-- 根据负载调整频率
-- 调整电压
-- 节省功耗
+    HAL_StatusTypeDef status = HAL_FLASH_Erase(&EraseInitStruct, &SectorError);
 
-**低功耗模式**：
-- 睡眠模式
-- 停止模式
-- 待机模式
-- 静态功耗 vs 动态功耗
+    HAL_FLASH_Lock();
 
-### 9.6 固件升级
+    return status;
+}
 
-**OTA（Over-The-Air）**：
-- 网络升级
-- 增量升级
-- 安全验证
+// Flash写入（双字）
+HAL_StatusTypeDef Flash_Write_DoubleWord(uint32_t address, uint64_t data) {
+    HAL_FLASH_Unlock();
 
-**UART升级**：
-- 串口 bootloader
-- Xmodem/Ymodem协议
+    HAL_StatusTypeDef status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD,
+                                                   address, data);
 
-**USB DFU**：
-- DFU协议
-- USB升级工具
+    HAL_FLASH_Lock();
+
+    return status;
+}
+
+// Flash写入（半字）
+HAL_StatusTypeDef Flash_Write_HalfWord(uint32_t address, uint16_t data) {
+    HAL_FLASH_Unlock();
+
+    HAL_StatusTypeDef status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD,
+                                                   address, data);
+
+    HAL_FLASH_Lock();
+
+    return status;
+}
+```
 
 ---
 
 ## 10. 传感器接口
 
-### 10.1 IMU（惯性测量单元）
+### 10.1 IMU传感器
 
-#### 加速度计原理（MEMS）
-- 微机械质量块
-- 电容变化检测
-- 测量重力分量
-- 单位：g（9.8m/s²）
+#### 加速度计原理
 
-#### 陀螺仪原理（MEMS、振动结构）
-- 振动结构科里奥利力
-- 电容变化检测
-- 单位：°/s
+**MEMS加速度计结构**：
+```
+┌─────────────────────────────────────────┐
+│              固定电极                    │
+│  ←──────── 质量块 ───────→              │
+│         ↓         ↓                     │
+│      可动电极   可动电极                  │
+│              固定电极                    │
+└─────────────────────────────────────────┘
 
-#### 磁力计/电子罗盘原理
-- 地磁场检测
-- 霍尔效应/各向异性磁阻
-- 单位：μT
+加速度: a = F/m = k*x/m
+电容变化: ΔC ∝ x ∝ a
+```
+
+**测量轴**：
+- X轴：左右加速
+- Y轴：前后加速
+- Z轴：上下加速（含重力）
+
+**关键参数**：
+- 量程：±2g/±4g/±8g/±16g
+- 分辨率：16位ADC
+- 零偏：±50mg
+- 噪声密度：100 μg/√Hz
+
+#### 陀螺仪原理
+
+**MEMS陀螺仪结构**：
+```
+┌────────────────────────────────────────────┐
+│                                            │
+│  ←────── 振动质量块 (驱动模式) ───────→    │
+│                                            │
+│         ║ 科里奥利力                      │
+│         ↓                                  │
+│    ┌──────────────┐                        │
+│    │ 检测质量块   │ ←── 角速度感应          │
+│    └──────────────┘                        │
+│                                            │
+└────────────────────────────────────────────┘
+```
+
+**测量原理**：
+- 驱动模式：质量块做往复振动
+- 角速度输入：产生科里奥利力
+- 检测电容变化∝角速度
+
+**关键参数**：
+- 量程：±250/±500/±1000/±2000 °/s
+- 灵敏度：LSB/°/s
+- 零偏稳定性：°/hr
+
+#### 磁力计原理
+
+**各向异性磁阻(AMR)**：
+```
+┌─────────────────────────────────────┐
+│                                     │
+│   ════════  铁磁材料薄膜  ════════   │
+│                                     │
+│   磁场方向改变 → 电阻变化            │
+│                                     │
+└─────────────────────────────────────┘
+```
+
+**椭圆修正**：
+- 硬磁补偿（恒定偏移）
+- 软磁补偿（灵敏度失真）
 
 #### 传感器融合算法
-- **AHRS**：姿态航向参考系统
-- **EKF**：扩展卡尔曼滤波
-- 互补滤波
 
-#### IMU+GPS融合（组合导航）
-- GPS提供绝对位置
-- IMU提供相对变化
-- 紧耦合/松耦合
+**互补滤波**：
+```c
+// 互补滤波姿态解算
+void ComplementaryFilter(float *gx, float *gy, float *gz,
+                          float *ax, float *ay, float *az,
+                          float *pitch, float *roll) {
+    // 加速度计计算角度
+    float acc_pitch = atan2(-ax, sqrt(ay*ay + az*az));
+    float acc_roll = atan2(ay, az);
 
-#### 常见芯片
-- **MPU6050**：6轴（Accel+Gyro）
-- **MPU9250**：9轴（+磁力计）
-- **BMI088**：高性能6轴
-- **LSM6DSV**：6轴+有限状态机
+    // 陀螺仪积分
+    static float pitch = 0, roll = 0;
+    pitch += *gx * dt;
+    roll += *gy * dt;
 
-#### 零偏校准、温度补偿
-- 静态零偏校准
-- 温度曲线补偿
-- Allan方差分析噪声
+    // 互补融合 (alpha = 0.98)
+    *pitch = alpha * pitch + (1-alpha) * acc_pitch;
+    *roll = alpha * roll + (1-alpha) * acc_roll;
+}
+```
+
+**EKF扩展卡尔曼滤波**：
+- 状态向量：[q0,q1,q2,q3, bx,by,bz]
+- 预测步：陀螺仪积分
+- 更新步：加速度计/磁力计校正
 
 ### 10.2 GNSS/GPS
 
-#### GPS/GLONASS/北斗/Galileo系统
-- GPS：美国，24颗卫星
-- GLONASS：俄罗斯
--北斗：中国，55颗卫星
-- Galileo：欧盟
-
 #### NMEA0183协议
-- 文本协议
-- $GPGGA/GPGLL/GPRMC/GPVTG
-- ASCII格式
 
-#### GGA语句
+**常用语句**：
+
+**$GPGGA** - 定位数据：
 ```
 $GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,47.0,M,,*47
+        │       │         │ │  │ │   │   │    │    │
+        │       │         │ │  │ │   │   │    │    └── 椭球高
+        │       │         │ │  │ │   │   │    └────── 大地水准面
+        │       │         │ │  │ │   │   └────────── 海拔
+        │       │         │ │  │ │   └──────────── HDOP
+        │       │         │ │  │ └────────────── Satellites
+        │       │         │ │  └──────────────── 定位质量(1=GPS)
+        │       │         │ └────────────────── 经度E/W
+        │       │         └────────────────── 纬度N/S
+        │       └──────────────────────────── UTC时间
+        └──────────────────────────────── 完整定位
 ```
 
-#### RMC语句
+**$GPRMC** - 推荐最小定位：
 ```
 $GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A
+        │    │   │         │         │     │     │     │
+        │    │   │         │         │     │     │     └── 磁偏角W/E
+        │    │   │         │         │     │     └──────── 磁偏角
+        │    │   │         │         │     └─────────── 日期DDMMYY
+        │    │   │         │         └────────────── 航向
+        │    │   │         └────────────────────── 速度(节)
+        │    │   └──────────────────────────────── 经度E/W
+        │    └────────────────────────────────── 状态A=有效
+        └────────────────────────────────────── UTC时间
 ```
 
 #### RTK定位技术
 
 **RTK原理**：
-- 载波相位差分
-- 基准站已知坐标
-- 厘米级精度
+```
+┌──────────────┐         差分数据(RTCM)         ┌──────────────┐
+│   基准站     │ ───────────────────────────→ │   移动站     │
+│  已知坐标    │                               │   流动站     │
+│  载波相位    │                               │  载波相位    │
+│  误差模型    │                               │  双差解算    │
+└──────────────┘                               └──────────────┘
+```
 
-**基准站与移动站**：
-- 基准站：固定坐标
-- 移动站：待测点
+**双差模型**：
+```
+Δ∇Φ = Φr - Φb - (λ*Δ∇ρ) + Δ∇N + ε
+Δ∇Φ: 双差载波相位
+Φ: 载波相位
+λ: 波长
+ρ: 几何距离
+N: 整周模糊度
+ε: 测量噪声
+```
 
-**双差定位模型**：
-- 站间差分
-- 星间差分
-- 消除钟差
-
-**整周模糊度解算**：
-- OTF（On The Fly）
-- AR（Ambiguity Resolution）
-
-**RTCM数据链路**：
-- 差分数据格式
+**RTCM数据格式**：
 - RTCM 3.0/3.2/3.3
+- 消息类型：1005/1077/1087/1127
 
 **NTRIP协议**：
-- 网络RTK传输
-- Caster/Client/Source
-
-**精度等级**：
-- RTK：2cm
-- PPP-RTK：cm级
-- DGPS：亚米级
-- 单点定位：米级
-
-**多路径效应与抗干扰**：
-- 多路径信号反射
-- 天线设计
-- 信号质量评估
-
-**基准站选址**：
-- 开阔天空
-- 远离干扰
-- 稳定供电
-
-#### 常见模块
-- **ublox**：M8系列/NEO系列
-- **泰斗**：TD1030
-- **MTK**：MT3333系列
-- **和芯星通**：UM220
-
-#### PPS授时（脉冲对齐）
-- 精确到纳秒
-- 同步时钟
-- 触发采集
-
-#### AGPS辅助定位
-- 星历辅助
-- 加速定位
-- 缩短TTFF
-
-### 10.3 其他传感器
-
-#### 温湿度传感器
-- **SHT系列**：SHT20/30/40
-- **AM2320**：I2C接口
-
-#### 气压传感器
-- **BMP280**：SPI/I2C
-- **BMP390**：更高精度
-
-#### 光传感器
-- 环境光检测
-- 接近检测
-
-#### 距离传感器
-- **ToF**：飞行时间法
-- **超声波**：声波测距
+```
+┌──────────┐    HTTP     ┌──────────┐   RTCM    ┌──────────┐
+│ NTRIP    │ ──────────→ │ NTRIP    │ ────────→ │   RTK    │
+│ Client   │             │ Caster   │           │ 移动站    │
+└──────────┘             └──────────┘           └──────────┘
+```
 
 ---
 
 ## 附录
 
-### 常见面试问题
+### 常见面试问题汇总
 
 1. **Cortex-M中断响应流程？**
+   - 自动保存上下文（xPSR, PC, LR, R12, R3-R0）
+   - 读取向量表，跳转到处理函数
+   - 执行处理，EXC_RETURN返回
+   - 自动恢复上下文
+
 2. **RTOS任务间通信方式？**
+   - 信号量（二值/计数/互斥）
+   - 消息队列
+   - 事件标志组
+   - 共享内存+信号量保护
+
 3. **Bootloader跳转注意事项？**
+   - 检查栈顶地址有效性
+   - 禁用中断
+   - 关闭缓存（如有）
+   - 设置MSP
+
 4. **DMA与缓存一致性如何处理？**
+   - 禁用缓存区域
+   - 软件维护（Clean/Invalidate）
+   - 使用内存屏障
+
 5. **SPI四种模式的区别？**
+   - CPOL: 时钟空闲电平
+   - CPHA: 数据采样边沿
+
 6. **I2C总线死锁如何解决？**
+   - 手动产生9个SCL脉冲
+   - 软件复位I2C外设
+
 7. **CAN总线终端电阻的作用？**
+   - 阻抗匹配
+   - 消除信号反射
+   - 标准值120Ω
+
 8. **MPU配置与内存保护？**
+   - 配置8-16个区域
+   - 设置访问权限
+   - 设置XN位禁止执行
 
 ---
 
-*文档版本：v1.0*
+*文档版本：v2.0 详细版*
 *更新时间：2026-03-05*
