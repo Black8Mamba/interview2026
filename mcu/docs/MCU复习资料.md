@@ -147,6 +147,133 @@ void MPU_Config(void) {
 }
 ```
 
+#### MPU属性详解：Shareable和Bufferable
+
+##### XN (Execute Never) - 禁止执行
+- **含义**: 该区域禁止执行指令
+- **作用**: 防止代码从数据区域执行，防止缓冲区溢出攻击
+- **典型应用**: 配置Flash和RAM为XN，防止恶意代码注入
+
+##### Shareable (共享属性)
+
+| 值 | 含义 | 应用场景 |
+|-----|------|----------|
+| 0 - Non-shareable | 非共享 | 单核系统，或多核间不使用共享内存 |
+| 1 - Shareable | 可共享 | 多核系统共享内存，外设寄存器 |
+
+**具体功能**:
+- **对共享内存的影响**:
+  - Shareable内存区域被所有处理器"可见"
+  - 处理器间访问共享内存时，硬件会自动维护一致性
+  - 在多核系统中，避免数据不一致问题
+
+- **典型使用场景**:
+  - 多核系统中的共享内存区域
+  - 外设寄存器区域（需要一致性地读写）
+  - RTOS中的共享数据结构
+
+- **注意事项**:
+  - 访问Non-shareable区域性能更好（无一致性开销）
+  - 在单核系统中，配置为Non-shareable即可
+
+##### Bufferable (缓冲属性)
+
+| 值 | 含义 | 影响 |
+|-----|------|------|
+| 0 - Non-bufferable | 不可缓冲 | 写入直接到达目标地址 |
+| 1 - Bufferable | 可缓冲 | 写入可以暂存于缓冲器 |
+
+**具体功能**:
+- **Non-bufferable**:
+  - 访问直接发送到目标
+  - 适合外设寄存器（必须立即写入）
+  - 适合需要严格内存顺序的场景
+
+- **Bufferable**:
+  - 写入可以先存于写缓冲器，稍后写入目标
+  - 提高写入性能
+  - **注意**: 可能导致读取到旧数据，需使用DMB/DSB保证顺序
+
+**典型配置示例**:
+```c
+// 外设区域配置 (不可缓冲)
+MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;  // 外设必须立即写入
+
+// SRAM区域配置 (可缓冲，提高性能)
+MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
+
+// 共享内存区域配置
+MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
+```
+
+##### TEX (Type Extension) - 类型扩展
+
+| TEX | 含义 | 典型应用 |
+|-----|------|----------|
+| 000 | Strongly Ordered / Device | 外设内存 |
+| 001 | Normal Memory | 普通内存 |
+| 010 | Device | 设备内存 |
+| 111 | Normal Memory | 可缓存内存 |
+
+##### Cacheable (缓存属性)
+
+| 值 | 含义 |
+|-----|------|
+| 0 - Non-cacheable | 不可缓存 |
+| 1 - Cacheable | 可缓存 |
+
+**组合使用场景**:
+```
+Normal Memory (TEX=000, C=1, B=0): Write-through, no allocate
+Normal Memory (TEX=000, C=1, B=1): Write-back, no allocate
+Normal Memory (TEX=001, C=1, B=1): Write-back, read/write allocate
+Device Memory (TEX=100, C=0, B=1): Bufferable device
+```
+
+#### MPU配置最佳实践
+
+```c
+void MPU_Config_Comprehensive(void) {
+    HAL_MPU_Disable();
+
+    // 1. 配置Flash区域: 只读，可缓存，不可执行
+    MPU_Region_InitTypeDef MPU_InitStruct = {0};
+    MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+    MPU_InitStruct.Number = MPU_REGION_NUMBER0;
+    MPU_InitStruct.BaseAddress = 0x08000000;
+    MPU_InitStruct.Size = MPU_REGION_SIZE_512KB;
+    MPU_InitStruct.AccessPermission = MPU_REGION_PRIV_RO_URO;
+    MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+    MPU_InitStruct.IsCacheable = MPU_ACCESS_CACHEABLE;
+    MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+    MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
+    MPU_InitStruct.SubRegionDisable = 0x00;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+    // 2. 配置SRAM区域: 读写，可缓存，不可执行
+    MPU_InitStruct.Number = MPU_REGION_NUMBER1;
+    MPU_InitStruct.BaseAddress = 0x20000000;
+    MPU_InitStruct.Size = MPU_REGION_SIZE_128KB;
+    MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+    MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
+    MPU_InitStruct.IsCacheable = MPU_ACCESS_CACHEABLE;
+    MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+    // 3. 配置外设区域: 不可缓存，不可缓冲
+    MPU_InitStruct.Number = MPU_REGION_NUMBER2;
+    MPU_InitStruct.BaseAddress = 0x40000000;
+    MPU_InitStruct.Size = MPU_REGION_SIZE_64MB;
+    MPU_InitStruct.AccessPermission = MPU_REGION_PRIV_RW_USR_RO;
+    MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+    MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+    MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+    HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+}
+```
+
 ### 1.1.7 FPU浮点单元
 
 #### M4/M7 FPU特性
@@ -183,8 +310,8 @@ void FPU_Init(void) {
    - M4支持SIMD操作
 
 2. **什么是特权级和用户级？有什么区别？**
-   - 特权级可资源
-   -访问所有 用户级受MPU限制，无法访问某些寄存器
+   - 特权级可访问所有资源
+   - 用户级受MPU限制，无法访问某些寄存器
 
 3. **NVIC中断优先级如何配置？**
    - 通过IPR寄存器配置
@@ -195,6 +322,150 @@ void FPU_Init(void) {
    - 简单易用，ARM内核自带
    - 可产生固定频率中断
    - 与处理器架构紧耦合
+
+5. **请详细解释Cortex-M的异常处理流程？**
+
+   **答：**
+   - 异常产生时，CPU自动将xPSR、PC、LR、R12、R0-R3压入当前栈（MSP或PSP）
+   - 加载向量表中的异常处理函数地址到PC
+   - 更新LR寄存器为特殊的EXC_RETURN值（标记返回模式）
+   - 切换到Handler模式，使用MSP堆栈
+
+   **异常返回流程：**
+   - 执行BX LR或其他返回指令
+   - 根据EXC_RETURN恢复PSR、PC、堆栈
+   - 从中断处继续执行
+
+6. **CONTROL寄存器的作用是什么？如何切换堆栈？**
+
+   **答：**
+   CONTROL寄存器包含：
+   - **CONTROL[0]**: 特权级选择
+     - 0: 特权级
+     - 1: 用户级
+   - **CONTROL[1]**: 堆栈选择
+     - 0: 使用MSP（主堆栈）
+     - 1: 使用PSP（进程堆栈）
+
+   **切换到用户级并使用PSP：**
+   ```asm
+   ; 初始状态在特权级，使用MSP
+   MOVS R0, #0x03    ; CONTROL = 0b11
+   MSR CONTROL, R0   ; 切换到用户级，使用PSP
+   ```
+
+7. **什么是MPU？它如何保护内存？**
+
+   **答：**
+   MPU (Memory Protection Unit) 内存保护单元：
+   - 将内存划分为多个区域（通常8或16个）
+   - 每个区域可独立设置访问权限
+   - 支持子区域禁用（将大区域划分为8个子区域）
+   - 支持背景区域（对未配置区域进行保护）
+
+   **访问权限：**
+   - 特权级读/写/执行权限
+   - 用户级读/写/执行权限
+   - XN (Execute Never) 禁止执行
+
+8. **FPU如何开启？浮点运算需要注意什么？**
+
+   **答：**
+   开启FPU：
+   ```c
+   void FPU_Init(void) {
+       // CPACR寄存器使能FPU
+       SCB->CPACR |= ((3UL << 10*2) | (3UL << 11*2));
+       __DSB();  // 数据同步屏障
+       __ISB();  // 指令同步屏障
+   }
+   ```
+
+   **注意事项：**
+   - 使用浮点运算时需要足够大的栈空间
+   - 中断服务程序中使用FPU需要保存S0-S15, FPSCR寄存器
+   - 配置编译器浮点ABI设置
+
+9. **Cortex-M的向量表可以重定位吗？如何实现？**
+
+   **答：**
+   可以重定位，通过SCB->VTOR（Vector Table Offset Register）寄存器：
+
+   ```c
+   // 重定位向量表到SRAM
+   // SRAM起始地址0x20000000
+   SCB->VTOR = 0x20000000;
+
+   // 或重定位到Flash其他位置
+   // 例如偏移0x10000
+   SCB->VTOR = 0x08000000 | 0x10000;
+   ```
+
+   **应用场景：**
+   - Bootloader：从SRAM启动
+   - 固件升级：切换到新程序
+   - 多程序加载
+
+10. **详细说明中断嵌套的条件和规则？**
+
+    **答：**
+    **中断嵌套条件：**
+    - 新中断的优先级必须比当前中断更高（数值更小）
+    - 需要使能全局中断（PRIMASK = 0）
+    - 需要设置优先级分组
+
+    **嵌套规则：**
+    - 高优先级中断可以抢占低优先级中断
+    - 同优先级中断不能嵌套
+    - 中断嵌套深度受限于堆栈大小
+    - 复位、NMI、HardFault不可嵌套
+
+    **中断响应过程：**
+    1. 响应中断，保存现场
+    2. 切换到对应优先级
+    3. 执行中断服务程序
+    4. 恢复现场，返回
+
+11. **MPU的Shareable和Bufferable属性有什么区别？**
+
+    **答：**
+    **Shareable（共享属性）：**
+    - Shareable: 内存区域可被多个处理器共享
+    - Non-shareable: 内存区域仅被单个处理器使用
+    - 多核系统中，Shareable区域需要硬件维护一致性
+
+    **Bufferable（缓冲属性）：**
+    - Bufferable: 写入可以存入缓冲器，延迟写入
+    - Non-bufferable: 写入立即到达目标
+    - 外设寄存器必须使用Non-bufferable
+
+12. **Cortex-M启动时，.data和.bss段是如何初始化的？**
+
+    **答：**
+    **初始化流程：**
+    1. **.data段复制：**
+       - 位置：Flash → SRAM
+       - 内容：已初始化的全局/静态变量
+       - 代码：启动汇编中循环复制
+
+    2. **.bss段清零：**
+       - 位置：SRAM
+       - 内容：未初始化的全局/静态变量
+       - 代码：启动汇编中循环清零
+
+    **示例代码：**
+    ```asm
+    ; 复制.data
+    LDR R0, =_sidata    ; Flash源地址
+    LDR R1, =_sdata     ; SRAM目标起始
+    LDR R2, =_edata     ; SRAM目标结束
+    ; 循环复制...
+
+    ; 清零.bss
+    LDR R0, =_sbss      ; BSS起始
+    LDR R1, =_ebss      ; BSS结束
+    ; 循环清零...
+    ```
 
 ---
 
@@ -421,7 +692,294 @@ SECTIONS
 }
 ```
 
-### 常见面试题
+### 1.3.6 Cortex-M启动汇编主要工作
+
+Cortex-M的启动汇编文件（`startup.s`或`startup_stm32.s`）是系统上电后首先执行的代码，主要完成以下工作：
+
+#### 启动汇编的核心任务
+
+```
+上电复位
+    │
+    ▼
+┌─────────────────────┐
+│ 1. 设置堆栈指针     │ ← 从向量表第0项获取MSP
+└─────────────────────┘
+    │
+    ▼
+┌─────────────────────┐
+│ 2. 跳转到Reset_Handler│ ← 从向量表第1项获取Reset向量
+└─────────────────────┘
+    │
+    ▼
+┌─────────────────────┐
+│ 3. 执行初始化代码    │
+│   - 复制 .data      │
+│   - 清零 .bss       │
+│   - 配置堆栈        │
+└─────────────────────┘
+    │
+    ▼
+┌─────────────────────┐
+│ 4. 调用SystemInit() │ ← C语言初始化函数
+└─────────────────────┘
+    │
+    ▼
+┌─────────────────────┐
+│ 5. 跳转__main       │ ← C运行时库
+└─────────────────────┘
+    │
+    ▼
+┌─────────────────────┐
+│ 6. 执行main()       │ ← 用户程序入口
+└─────────────────────┘
+```
+
+#### 启动汇编详细分析
+
+```asm
+;===============================================================================
+; STM32启动文件典型结构
+;===============================================================================
+
+; 文件: startup_stm32f103xe.s
+
+; -----------------------------------------------------------------------------
+; 1. 定义向量表
+; -----------------------------------------------------------------------------
+    SECTION .isr_vector : DATA
+    EXPORT __Vectors
+    EXPORT __Vectors_End
+    EXPORT __Vectors_Size
+
+__Vectors:
+    ; 向量表第0项: 主堆栈指针 (MSP)
+    DCD     __initial_sp              ; Top of Stack
+
+    ; 向量表第1项: 复位向量
+    DCD     Reset_Handler              ; Reset Handler
+
+    ; 向量表第2项: NMI Handler
+    DCD     NMI_Handler                ; NMI Handler
+
+    ; 向量表第3项: HardFault Handler
+    DCD     HardFault_Handler         ; Hard Fault Handler
+
+    ; ... 其他异常向量 ...
+    DCD     WWDG_IRQHandler           ; Window Watchdog
+    DCD     PVD_IRQHandler            ; PVD through EXTI Line detection
+    DCD     RTC_IRQHandler            ; RTC through EXTI Line
+    ; ... 更多中断向量 ...
+__Vectors_End:
+
+__Vectors_Size  EQU  __Vectors_End - __Vectors
+
+; -----------------------------------------------------------------------------
+; 2. 复位处理函数
+; -----------------------------------------------------------------------------
+    SECTION .text : CODE : REORDER (2)
+
+    ; 导出复位处理函数
+    EXPORT  Reset_Handler
+    EXPORT  __Vectors
+
+Reset_Handler:
+    ; -----------------------------
+    ; 2.1 禁用中断
+    ; -----------------------------
+    CPSID   I                         ; 关闭全局中断
+                                        ; 防止初始化过程被中断打扰
+
+    ; -----------------------------
+    ; 2.2 数据初始化
+    ; -----------------------------
+    ; 复制 .data 段 (从Flash到SRAM)
+    ; .data: 已初始化的全局/静态变量
+
+    LDR     R0, = _sidata            ; .data 源地址 (Flash)
+    LDR     R1, = _sdata             ; .data 目标起始地址 (SRAM)
+    LDR     R2, = _edata             ; .data 目标结束地址 (SRAM)
+
+    MOVS    R3, #0                    ; 初始化 R3 = 0
+    B       LoopCopyDataInit
+
+CopyDataInit:
+    LDR     R3, [R0, R3]              ; 从Flash读取数据
+    STR     R3, [R1, R3]              ; 写入SRAM
+    ADDS    R3, R3, #4                ; R3 += 4
+
+LoopCopyDataInit:
+    ADDS    R4, R1, R3                ; 当前目标地址
+    CMP     R4, R2                    ; 比较是否到达结束地址
+    BCC     CopyDataInit              ; 如果未到达，继续复制
+
+    ; -----------------------------
+    ; 2.3 BSS清零
+    ; -----------------------------
+    ; 清零 .bss 段
+    ; .bss: 未初始化的全局/静态变量
+
+    LDR     R2, = _sbss              ; BSS 起始地址
+    LDR     R4, = _ebss               ; BSS 结束地址
+    MOVS    R3, #0                    ; R3 = 0
+    B       LoopFillZerobss
+
+FillZerobss:
+    STR     R3, [R2], #4              ; 写入0到BSS区域
+
+LoopFillZerobss:
+    CMP     R2, R4                    ; 比较是否到达结束地址
+    BCC     FillZerobss               ; 如果未到达，继续清零
+
+IF      :DEF:__MICROLIB               ; 如果使用微库
+
+    EXPORT  __initial_sp              ; 导出堆栈指针
+    EXPORT  __heap_base
+    EXPORT  __heap_limit
+
+ELSE                                    ; 使用标准库
+
+    ; -----------------------------
+    ; 2.4 堆栈初始化
+    ; -----------------------------
+    ; 分配堆和栈空间
+
+    IMPORT  __use_two_region_memory
+
+    EXPORT  __user_initial_stackheap
+
+__user_initial_stackheap:
+
+    LDR     R0, =  Heap_Mem           ; 堆起始地址
+    LDR     R1, = (Stack_Mem + Stack_Size)  ; 栈顶地址
+    LDR     R2, = (Heap_Mem + Heap_Size)    ; 堆结束地址
+    LDR     R3, = Stack_Mem            ; 栈底地址
+
+    BX      LR
+
+ENDIF
+
+    ; -----------------------------
+    ; 2.5 开启中断
+    ; -----------------------------
+    CPSIE   I                          ; 开启全局中断
+
+    ; -----------------------------
+    ; 2.6 调用SystemInit()
+    ; -----------------------------
+    IMPORT  SystemInit
+    LDR     R0, = SystemInit
+    BLX     R0                        ; 调用SystemInit()
+
+    ; -----------------------------
+    ; 2.7 跳转到__main
+    ; -----------------------------
+    ; __main 是C运行时库的入口，会:
+    ; - 初始化C库
+    ; - 调用全局构造函数
+    ; - 最终跳转到main()
+
+    IMPORT  __main
+    LDR     R0, = __main
+    BX      R0                        ; 跳转到__main
+
+    ; -----------------------------
+    ; 2.8 死循环 (如果__main返回)
+    ; -----------------------------
+LoopForever:
+    B       LoopForever
+
+; -----------------------------------------------------------------------------
+; 3. 默认异常处理函数
+; -----------------------------------------------------------------------------
+NMI_Handler     PROC
+                EXPORT  NMI_Handler            [WEAK]
+                B       .
+                ENDP
+
+HardFault_Handler PROC
+                EXPORT  HardFault_Handler       [WEAK]
+                B       .
+                ENDP
+
+; ... 其他异常处理函数类似 ...
+
+; -----------------------------------------------------------------------------
+; 4. 弱定义中断处理函数
+; -----------------------------------------------------------------------------
+; 用户可以在C文件中重新定义这些函数
+WWDG_IRQHandler PROC
+                EXPORT  WWDG_IRQHandler          [WEAK]
+                B       .
+                ENDP
+
+; ... 其他中断处理函数类似 ...
+
+    END
+```
+
+#### 启动过程详解
+
+**1. 向量表加载**
+```
+地址0x00000000: MSP = __initial_sp    ; 堆栈指针
+地址0x00000004: Reset_Handler          ; 复位向量
+地址0x00000008: NMI_Handler            ; NMI中断
+...
+```
+
+**2. .data段复制**
+- **位置**: Flash (只读) → SRAM (读写)
+- **内容**: 已初始化的全局变量和静态变量
+- **示例**:
+```c
+// 这些变量在Flash中有初始值，需要复制到SRAM
+int g_value = 100;      // .data段
+const char *str = "hello";  // .data段 (指针本身)
+```
+
+**3. .bss段清零**
+- **位置**: SRAM
+- **内容**: 未初始化的全局变量和静态变量
+- **示例**:
+```c
+// 这些变量在SRAM中但需要清零
+int g_buffer[1024];     // .bss段
+static int s_counter;   // .bss段
+```
+- **作用**: 确保未初始化变量的默认值是0
+
+**4. 堆栈初始化**
+```
+    ┌─────────────────┐ 高地址
+    │      栈        │ 向下增长
+    │    (Stack)     │
+    ├─────────────────┤
+    │                │
+    │      堆        │ 向上增长
+    │    (Heap)      │
+    ├─────────────────┤
+    │     .bss       │
+    ├─────────────────┤
+    │     .data      │
+    ├─────────────────┤
+    │   Vector Table │ 低地址
+    └─────────────────┘
+```
+
+**5. SystemInit()**
+- 配置Flash等待周期
+- 设置向量表偏移
+- 配置时钟系统
+- 初始化FPU (如果存在)
+
+**6. __main vs main**
+- `__main`: C运行时库入口，负责:
+  - 库初始化
+  - 全局对象构造函数调用 (`__libc_init_array`)
+  - 最终跳转到 `main()`
+
+#### 常见面试题
 
 1. **STM32上电后的启动流程是什么？**
    - 上电复位 → SystemInit() → __main → main()
@@ -1535,6 +2093,18 @@ GD 32 0 F 103 V 8 T 6
 4. **M4内核支持DSP指令集，对吗？**
    - 答案: 对
 
+5. **MSP和PSP的区别是什么？**
+   - 答案: MSP是主堆栈，PSP是进程堆栈。MSP用于异常处理和系统初始化，PSP用于用户任务
+
+6. **CONTROL寄存器的bit1用于什么？**
+   - 答案: 选择使用MSP(0)还是PSP(1)
+
+7. **Cortex-M的向量表第一项是什么？**
+   - 答案: 主堆栈指针(MSP)初始值
+
+8. **单片机刚上电时使用的是哪个堆栈？**
+   - 答案: MSP (从向量表第一项加载)
+
 ### 简答题
 
 1. **Cortex-M3和M4的区别是什么？**
@@ -1551,6 +2121,63 @@ GD 32 0 F 103 V 8 T 6
    - Flash读取速度低于CPU主频
    - 需要插入等待周期保证数据正确
 
+4. **详细说明Cortex-M的中断响应过程？**
+
+   **答：**
+   1. 异常发生时，CPU自动将xPSR、PC、LR、R12、R0-R3压入当前堆栈
+   2. 根据异常编号从向量表加载异常处理函数地址
+   3. 切换到Handler模式，使用MSP作为堆栈指针
+   4. 更新LR为EXC_RETURN值（用于返回）
+   5. 跳转到异常处理函数执行
+   6. 处理完成后，执行返回指令，恢复现场继续执行
+
+5. **什么是EXC_RETURN？它的作用是什么？**
+
+   **答：**
+   EXC_RETURN是LR寄存器的特殊值，用于异常返回：
+
+   | 值 | 含义 |
+   |---|---|
+   | 0xFFFFFFF1 | 返回Handler模式，使用MSP |
+   | 0xFFFFFFF9 | 返回Thread模式，使用MSP |
+   | 0xFFFFFFFD | 返回Thread模式，使用PSP |
+
+6. **请说明MSP、PSP的使用场景？**
+
+   **答：**
+   - **MSP (Main Stack Pointer)**:
+     - 系统复位后默认使用
+     - 异常处理时使用
+     - 用于中断服务程序
+
+   - **PSP (Process Stack Pointer)**:
+     - 用户任务/线程使用
+     - RTOS中每个任务独立的栈
+     - 实现用户级和特权级分离
+
+7. **Cortex-M的Fault异常有哪些？如何处理？**
+
+   **答：**
+   | 异常类型 | 描述 | 常见原因 |
+   |----------|------|----------|
+   | HardFault | 硬 fault | 所有其他 fault 无法处理时触发 |
+   | MemManage | 内存管理 fault | MPU 访问违规 |
+   | BusFault | 总线 fault | 访问无效地址 |
+   | UsageFault | 用法 fault | 未对齐、除零等 |
+
+   **处理方法：**
+   - 在 HardFault_Handler 中分析 SP 指针
+   - 读取保存的寄存器值确定错误位置
+   - 检查内存访问是否越界
+
+8. **为什么 Cortex-M 使用统一的 4GB 地址空间？**
+
+   **答：**
+   - 简化软件设计，统一的内存映射
+   - Flash、SRAM、外设统一编址
+   - 方便链接脚本编写
+   - 访问任何资源都使用相同的寻址方式
+
 ### 编程题
 
 1. **实现GPIO端口的位带操作**
@@ -1564,6 +2191,67 @@ GD 32 0 F 103 V 8 T 6
 #define PA5_OUT BIT_ADDR(GPIOA_BASE + 0x0C, 5)  // PA5输出
 PA5_OUT = 1;  // 输出高
 PA5_OUT = 0;  // 输出低
+```
+
+2. **实现精确延时函数（使用SysTick）**
+
+```c
+volatile uint32_t g_systick_count = 0;
+
+void SysTick_Handler(void) {
+    g_systick_count++;
+}
+
+void delay_ms(uint32_t ms) {
+    uint32_t start = g_systick_count;
+    while ((g_systick_count - start) < ms);
+}
+
+// 或者使用DWT单元
+void delay_us(uint32_t us) {
+    volatile uint32_t *dwt_ctrl = (uint32_t *)0xE0001000;
+    volatile uint32_t *dwt_cyccnt = (uint32_t *)0xE0001004;
+    volatile uint32_t *demcr = (uint32_t *)0xE000EDFC;
+
+    // 使能DWT
+    *demcr |= (1 << 24);  // TRCENA
+    *dwt_ctrl |= (1 << 0);  // CYCCNTENA
+
+    uint32_t start = *dwt_cyccnt;
+    uint32_t cycles = us * (SystemCoreClock / 1000000);
+    while ((*dwt_cyccnt - start) < cycles);
+}
+```
+
+3. **实现临界区保护（禁用/启用中断）**
+
+```c
+// 方法1: 使用cpsid/cpsie
+void critical_enter(void) {
+    __asm volatile ("cpsid i" : : : "memory");
+}
+
+void critical_exit(void) {
+    __asm volatile ("cpsie i" : : : "memory");
+}
+
+// 方法2: 使用 PRIMASK
+void critical_enter(void) {
+    __asm volatile (
+        "mrs r0, primask\n"
+        "cpsid i\n"
+        "str r0, [sp, #-4]!\n"
+        : : : "r0", "memory"
+    );
+}
+
+void critical_exit(void) {
+    __asm volatile (
+        "ldr r0, [sp], #4\n"
+        "msr primask, r0\n"
+        : : : "r0", "memory"
+    );
+}
 ```
 
 ## 5.2 外设与驱动类
